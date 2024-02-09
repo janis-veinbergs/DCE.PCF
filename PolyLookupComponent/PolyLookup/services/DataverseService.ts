@@ -43,7 +43,7 @@ const tableDefinitionColumns = [
 
 const viewDefinitionColumns = ["savedqueryid", "name", "fetchxml", "layoutjson", "querytype"];
 
-const apiVersion = "9.2";
+const apiVersion = "9.1";
 
 export function useMetadata(
   currentTable: string,
