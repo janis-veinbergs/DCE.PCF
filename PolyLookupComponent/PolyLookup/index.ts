@@ -3,14 +3,16 @@ import PolyLookupControl, { PolyLookupProps, RelationshipTypeEnum } from "./comp
 import { IInputs, IOutputs } from "./generated/ManifestTypes";
 import { IExtendedContext } from "./types/extendedContext";
 import { LanguagePack } from "./types/languagePack";
+import ReactDOM from "react-dom";
 
-export class PolyLookup implements ComponentFramework.ReactControl<IInputs, IOutputs> {
-  private theComponent: ComponentFramework.ReactControl<IInputs, IOutputs>;
+export class PolyLookup implements ComponentFramework.StandardControl<IInputs, IOutputs> {
+  private theComponent: ComponentFramework.StandardControl<IInputs, IOutputs>;
   private notifyOutputChanged: () => void;
   private output: string | undefined;
   private outputSelectedItems: string | undefined;
-  private context: IExtendedContext;
+  private context: ComponentFramework.Context<IInputs>;
   private languagePack: LanguagePack;
+  private container?: HTMLDivElement;
 
   /**
    * Empty constructor.
@@ -25,7 +27,12 @@ export class PolyLookup implements ComponentFramework.ReactControl<IInputs, IOut
    * @param notifyOutputChanged A callback method to alert the framework that the control has new outputs ready to be retrieved asynchronously.
    * @param state A piece of data that persists in one session for a single user. Can be set at any point in a controls life cycle by calling 'setControlState' in the Mode interface.
    */
-  public init(context: IExtendedContext, notifyOutputChanged: () => void, state: ComponentFramework.Dictionary): void {
+  public init(
+    context: ComponentFramework.Context<IInputs>,
+    notifyOutputChanged: () => void,
+    state: ComponentFramework.Dictionary,
+    container: HTMLDivElement
+  ): void {
     this.notifyOutputChanged = notifyOutputChanged;
     this.context = context;
     this.languagePack = {
@@ -44,6 +51,7 @@ export class PolyLookup implements ComponentFramework.ReactControl<IInputs, IOut
       NoMoreRecordsMessage: context.resources.getString("NoMoreRecordsMessage"),
       SuggestionListFullMessage: context.resources.getString("SuggestionListFullMessage"),
     };
+    this.container = container;
   }
 
   /**
@@ -51,7 +59,8 @@ export class PolyLookup implements ComponentFramework.ReactControl<IInputs, IOut
    * @param context The entire property bag available to control via Context Object; It contains values as set up by the customizer mapped to names defined in the manifest, as well as utility functions
    * @returns ReactElement root react element for the control
    */
-  public updateView(context: IExtendedContext): React.ReactElement {
+  public updateView(context: IExtendedContext): void {
+    if (!this.container) { throw "Container must be present" }
     this.context = context;
 
     let clientUrl = "";
@@ -81,7 +90,10 @@ export class PolyLookup implements ComponentFramework.ReactControl<IInputs, IOut
           : undefined,
       onQuickCreate: context.parameters.allowQuickCreate?.raw === "1" ? this.onQuickCreate : undefined,
     };
-    return React.createElement(PolyLookupControl, props);
+    ReactDOM.render(
+      React.createElement(PolyLookupControl, props),
+      this.container
+    );
   }
 
   /**
@@ -137,19 +149,13 @@ export class PolyLookup implements ComponentFramework.ReactControl<IInputs, IOut
           }
         );
       } else {
-        result = await this.context.navigation.navigateTo(
+        result = await this.context.navigation.openForm(
           {
-            pageType: "entityrecord",
+            windowPosition: 1,
             entityName: entityName,
-            data: {
-              [primaryAttribute]: value ?? "",
-            },
           },
           {
-            target: 2,
-            height: { value: 80, unit: "%" },
-            width: { value: 70, unit: "%" },
-            position: 1,
+            [primaryAttribute]: value ?? "",
           }
         );
       }
