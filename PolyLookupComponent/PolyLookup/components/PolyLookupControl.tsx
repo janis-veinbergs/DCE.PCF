@@ -1,11 +1,7 @@
 import {
   IBasePickerStyles,
   IBasePickerSuggestionsProps,
-  ITag,
-  ITagItemProps,
-  TagPicker,
   TagPickerBase,
-  ValidationState,
 } from "@fluentui/react";
 import { QueryClient, QueryClientProvider, useMutation } from "@tanstack/react-query";
 import Handlebars from "handlebars";
@@ -17,14 +13,14 @@ import {
   deleteRecord,
   disassociateRecord,
   getCurrentRecord,
-  retrieveMultipleFetch,
   useLanguagePack,
   useMetadata,
   useSelectedItems,
 } from "../services/DataverseService";
 import { LanguagePack } from "../types/languagePack";
 import { IMetadata } from "../types/metadata";
-import { SuggestionInfo } from "./SuggestionInfo";
+import { ILookupItem } from "./LookupItem";
+import { Lookup } from "./Lookup";
 
 const queryClient = new QueryClient();
 const parser = new DOMParser();
@@ -60,9 +56,13 @@ export interface PolyLookupProps {
   ) => Promise<string | undefined>;
 }
 
-interface ITagWithData extends ITag {
-  data: ComponentFramework.WebApi.Entity;
-}
+
+
+const toEntityReference = (entity: ComponentFramework.WebApi.Entity, metadata: IMetadata | undefined) => ({
+  id: entity[metadata?.associatedEntity.PrimaryIdAttribute ?? ""],
+  name: entity[metadata?.associatedEntity.PrimaryNameAttribute ?? ""],
+  etn: metadata?.associatedEntity.LogicalName ?? "",
+});
 
 const Body = ({
   currentTable,
@@ -102,28 +102,6 @@ const Body = ({
     searchForMoreText: languagePack.LoadMoreLabel,
   };
 
-  const getPlaceholder = () => {
-    if (formType === XrmEnum.FormType.Create) {
-      if (!outputSelectedItems) {
-        return languagePack.CreateFormNotSupportedMessage;
-      }
-    } else if (formType !== XrmEnum.FormType.Update) {
-      return languagePack.ControlIsNotAvailableMessage;
-    }
-
-    if (isDataLoading) {
-      return languagePack.LoadingMessage;
-    }
-
-    if (selectedItems?.length || selectedItemsCreate.length || disabled) {
-      return "";
-    }
-
-    return metadata?.associatedEntity.DisplayCollectionNameLocalized
-      ? sprintf(languagePack.Placeholder, metadata?.associatedEntity.DisplayCollectionNameLocalized)
-      : languagePack.PlaceholderDefault;
-  };
-
   const shouldDisable = () => {
     if (formType === XrmEnum.FormType.Create) {
       if (!outputSelectedItems) {
@@ -158,7 +136,6 @@ const Body = ({
       : languagePack.EmptyListDefaultMessage;
   }
 
-  const associatedTableSetName = metadata?.associatedEntity.EntitySetName ?? "";
   const associatedFetchXml = metadata?.associatedView.fetchxml;
 
   const fetchXmlTemplate = Handlebars.compile(associatedFetchXml ?? "");
@@ -173,36 +150,29 @@ const Body = ({
 
   if (isLoadingSelectedItemsSuccess && onChange) {
     onChange(
-      selectedItems?.map((i) => {
-        return {
-          id: i[metadata?.associatedEntity.PrimaryIdAttribute ?? ""],
-          name: i[metadata?.associatedEntity.PrimaryNameAttribute ?? ""],
-          etn: metadata?.associatedEntity.LogicalName ?? "",
-        } as ComponentFramework.EntityReference;
-      })
+      selectedItems?.map((i) => toEntityReference(i, metadata))
     );
   }
 
   // filter query
-  const filterQuery = useMutation({
-    mutationFn: ({ searchText, pageSizeParam }: { searchText: string; pageSizeParam: number | undefined }) => {
-      let fetchXml = metadata?.associatedView.fetchxml ?? "";
+  const getFetchXml = React.useCallback((searchText: string) => {
+      const fetchXmlMaybeDynamic = metadata?.associatedView.fetchxml ?? "";
       let shouldDefaultSearch = false;
       if (!lookupView && metadata?.associatedView.querytype === 64) {
         shouldDefaultSearch = true;
       } else {
         if (
-          !fetchXml.includes("{{PolyLookupSearch}}") &&
-          !fetchXml.includes("{{ PolyLookupSearch}}") &&
-          !fetchXml.includes("{{PolyLookupSearch }}") &&
-          !fetchXml.includes("{{ PolyLookupSearch }}")
+          !fetchXmlMaybeDynamic.includes("{{PolyLookupSearch}}") &&
+          !fetchXmlMaybeDynamic.includes("{{ PolyLookupSearch}}") &&
+          !fetchXmlMaybeDynamic.includes("{{PolyLookupSearch }}") &&
+          !fetchXmlMaybeDynamic.includes("{{ PolyLookupSearch }}")
         ) {
           shouldDefaultSearch = true;
         }
 
         const currentRecord = getCurrentRecord();
 
-        fetchXml = fetchXmlTemplate({
+        return fetchXmlTemplate({
           ...currentRecord,
           PolyLookupSearch: searchText,
         });
@@ -211,7 +181,7 @@ const Body = ({
       if (shouldDefaultSearch) {
         // if lookup view is not specified and using default lookup fiew,
         // add filter condition to fetchxml to support search
-        const doc = parser.parseFromString(fetchXml, "application/xml");
+        const doc = parser.parseFromString(fetchXmlMaybeDynamic, "application/xml");
         const entities = doc.documentElement.getElementsByTagName("entity");
         for (let i = 0; i < entities.length; i++) {
           const entity = entities[i];
@@ -225,12 +195,9 @@ const Body = ({
             entity.appendChild(filter);
           }
         }
-        fetchXml = serializer.serializeToString(doc);
+        return serializer.serializeToString(doc);
       }
-
-      return retrieveMultipleFetch(associatedTableSetName, fetchXml, 1, pageSizeParam);
-    },
-  });
+    }, [metadata, fetchXmlTemplate]);
 
   // associate query
   const associateQuery = useMutation({
@@ -278,57 +245,17 @@ const Body = ({
     },
   });
 
-  const filterSuggestions = useCallback(
-    async (filterText: string, selectedTag?: ITag[]): Promise<ITag[]> => {
-      const results = await filterQuery.mutateAsync({ searchText: filterText, pageSizeParam: pageSize });
-      return getSuggestionTags(results, metadata);
-    },
-    [metadata?.associatedEntity.EntitySetName]
-  );
-
-  const showMoreSuggestions = useCallback(
-    async (filterText: string, selectedTag?: ITag[]): Promise<ITag[]> => {
-      const results = await filterQuery.mutateAsync({
-        searchText: filterText,
-        pageSizeParam: (pageSize ?? 50) * 2 + 1,
-      });
-      return getSuggestionTags(results, metadata);
-    },
-    [metadata?.associatedEntity.EntitySetName]
-  );
-
-  const showAllSuggestions = useCallback(
-    async (selectedTags?: ITag[]): Promise<ITag[]> => {
-      const results = await filterQuery.mutateAsync({ searchText: "", pageSizeParam: pageSize });
-      return getSuggestionTags(results, metadata);
-    },
-    [metadata?.associatedEntity.PrimaryIdAttribute]
-  );
 
   const onPickerChange = useCallback(
-    (selectedTags?: ITag[]): void => {
+    (selectedTags?: ILookupItem[]): void => {
       if (formType === XrmEnum.FormType.Create) {
         const removed = selectedItemsCreate?.filter(
-          (i) =>
-            !selectedTags?.some((t) => {
-              const data = (t as ITagWithData).data;
-              return (
-                data[metadata?.associatedEntity.PrimaryIdAttribute ?? ""] ===
-                i[metadata?.associatedEntity.PrimaryIdAttribute ?? ""]
-              );
-            })
+          (i) => !selectedTags?.some((t) => t.entityReference.id === i[metadata?.associatedEntity.PrimaryIdAttribute ?? ""])
         );
 
-        const added = selectedTags
-          ?.filter((t) => {
-            const data = (t as ITagWithData).data;
-            return !selectedItemsCreate?.some(
-              (i) =>
-                i[metadata?.associatedEntity.PrimaryIdAttribute ?? ""] ===
-                data[metadata?.associatedEntity.PrimaryIdAttribute ?? ""]
-            );
-          })
-          .map((t) => (t as ITagWithData).data);
+        const added = selectedTags?.filter((t) => 
+            !selectedItemsCreate?.some((i) => t.entityReference.id === i[metadata?.associatedEntity.PrimaryIdAttribute ?? ""])
+        ).map((t) => t.data);
 
         const oldRemoved = selectedItemsCreate?.filter(
           (o) =>
@@ -344,40 +271,23 @@ const Body = ({
 
         if (onChange) {
           onChange(
-            newSelectedItems?.map((i) => {
-              return {
-                id: i[metadata?.associatedEntity.PrimaryIdAttribute ?? ""],
-                name: i[metadata?.associatedEntity.PrimaryNameAttribute ?? ""],
-                etn: metadata?.associatedEntity.LogicalName ?? "",
-              } as ComponentFramework.EntityReference;
-            })
+            newSelectedItems?.map((i) => toEntityReference(i, metadata))
           );
         }
       } else if (formType === XrmEnum.FormType.Update) {
-        const removed = selectedItems
-          ?.filter(
-            (i) =>
-              !selectedTags?.some((t) => {
-                const data = (t as ITagWithData).data;
-                return (
-                  data[metadata?.associatedEntity.PrimaryIdAttribute ?? ""] ===
-                  i[metadata?.associatedEntity.PrimaryIdAttribute ?? ""]
-                );
-              })
+        const removed = selectedItems?.filter((i) =>
+            !selectedTags?.some((t) => t.entityReference.id === i.data[metadata?.associatedEntity.PrimaryIdAttribute ?? ""])
           )
           .map((i) =>
             relationshipType === RelationshipTypeEnum.ManyToMany
-              ? i[metadata?.associatedEntity.PrimaryIdAttribute ?? ""]
-              : i[metadata?.intersectEntity.PrimaryIdAttribute ?? ""]
+              ? i.data[metadata?.associatedEntity.PrimaryIdAttribute ?? ""]
+              : i.data[metadata?.intersectEntity.PrimaryIdAttribute ?? ""]
           );
 
         const added = selectedTags
           ?.filter((t) => {
-            const data = (t as ITagWithData).data;
             return !selectedItems?.some(
-              (i) =>
-                i[metadata?.associatedEntity.PrimaryIdAttribute ?? ""] ===
-                data[metadata?.associatedEntity.PrimaryIdAttribute ?? ""]
+              (i) => i.entityReference.id === t.data[metadata?.associatedEntity.PrimaryIdAttribute ?? ""]
             );
           })
           .map((t) => t.key);
@@ -390,7 +300,7 @@ const Body = ({
   );
 
   const onItemSelected = useCallback(
-    (item?: ITag): ITag | null => {
+    (item?: ILookupItem): ILookupItem | null => {
       if (!item) return null;
 
       if (
@@ -400,7 +310,7 @@ const Body = ({
         return item;
       } else if (
         formType === XrmEnum.FormType.Update &&
-        !selectedItems?.some((i) => i[metadata?.associatedEntity.PrimaryIdAttribute ?? ""] === item.key)
+        !selectedItems?.some((i) => i.key === item.key)
       ) {
         return item;
       }
@@ -409,44 +319,30 @@ const Body = ({
     [selectedItems, metadata?.associatedEntity.PrimaryIdAttribute]
   );
 
-  const onCreateNew = (input: string): ValidationState => {
-    if (onQuickCreate) {
-      onQuickCreate(
-        metadata?.associatedEntity.LogicalName,
-        metadata?.associatedEntity.PrimaryNameAttribute,
-        input,
-        metadata?.associatedEntity.IsQuickCreateEnabled
-      )
-        .then((result) => {
-          if (result) {
-            associateQuery.mutate(result);
-            // TODO: fix this hack
-            // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-            // @ts-ignore
-            pickerRef.current.input.current?._updateValue("");
-          }
-        })
-        .catch((err) => {
-          console.log(err);
-        });
-    }
-    return ValidationState.invalid;
-  };
-
   const isDataLoading = (isLoadingMetadata || isLoadingSelectedItems) && !shouldDisable();
 
+  const isEmpty = (((selectedItems?.length == 0 && selectedItemsCreate?.length == 0) ?? true) || disabled) ?? true;
+
   return (
-    <TagPicker
-      ref={pickerRef}
-      selectedItems={getSuggestionTags(
-        formType === XrmEnum.FormType.Create ? selectedItemsCreate : selectedItems,
-        metadata
-      )}
-      onResolveSuggestions={filterSuggestions}
-      onEmptyResolveSuggestions={showAllSuggestions}
-      onGetMoreResults={showMoreSuggestions}
+    <Lookup 
+      metadata={metadata}
+      formType={formType}
+      disabled={disabled}
+      itemLimit={itemLimit}
+      selectedItems={selectedItems}
+      pickerSuggestionsProps={pickerSuggestionsProps}
       onChange={onPickerChange}
       onItemSelected={onItemSelected}
+      isEmpty={isEmpty}
+      defaultLanguagePack={defaultLanguagePack}
+      isDataLoading={isDataLoading}
+      associateQuery={associateQuery}
+      onQuickCreate={onQuickCreate}
+      languagePackPath={languagePackPath}
+      outputSelectedItems={outputSelectedItems}
+      pageSize={pageSize}
+      lookupView={lookupView}
+      getFetchXml={getFetchXml}
       styles={(props) => {
         // eslint-disable-next-line react/prop-types
         const isFocused = props.isFocused;
@@ -469,54 +365,9 @@ const Body = ({
         };
         return pickerStyles;
       }}
-      pickerSuggestionsProps={pickerSuggestionsProps}
-      disabled={disabled || shouldDisable()}
-      onRenderItem={(props: ITagItemProps) => {
-        if (disabled) {
-          props.styles = { close: { display: "none" } };
-        }
-        return TagPickerBase.defaultProps.onRenderItem(props);
-      }}
-      onRenderSuggestionsItem={(tag: ITag) => {
-        const data = (tag as ITagWithData).data;
-        const infoMap = new Map<string, string>();
-        metadata?.associatedView?.layoutjson?.Rows?.at(0)?.Cells.forEach((cell) => {
-          let displayValue = data[cell.Name + "@OData.Community.Display.V1.FormattedValue"];
-          if (!displayValue) {
-            displayValue = data[cell.Name];
-          }
-          infoMap.set(cell.Name, displayValue ?? "");
-        });
-        return <SuggestionInfo infoMap={infoMap}></SuggestionInfo>;
-      }}
-      resolveDelay={100}
-      inputProps={{
-        placeholder: getPlaceholder(),
-      }}
-      pickerCalloutProps={{
-        calloutMaxWidth: 500,
-      }}
-      itemLimit={itemLimit}
-      onValidateInput={onCreateNew}
     />
   );
 };
-
-function getSuggestionTags(
-  suggestions: ComponentFramework.WebApi.Entity[] | undefined,
-  metadata: IMetadata | undefined
-) {
-  return (
-    suggestions?.map(
-      (i) =>
-        ({
-          key: i[metadata?.associatedEntity.PrimaryIdAttribute ?? ""] ?? "",
-          name: i[metadata?.associatedEntity.PrimaryNameAttribute ?? ""] ?? "",
-          data: i,
-        }) as ITagWithData
-    ) ?? []
-  );
-}
 
 export default function PolyLookupControl(props: PolyLookupProps) {
   return (

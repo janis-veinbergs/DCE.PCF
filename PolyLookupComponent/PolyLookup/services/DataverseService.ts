@@ -10,6 +10,7 @@ import {
   IViewDefinition,
   IViewLayout,
 } from "../types/metadata";
+import { ILookupItem } from "PolyLookup/components/LookupItem";
 
 const nToNColumns = [
   "SchemaName",
@@ -401,10 +402,19 @@ export async function retrieveAssociatedRecords(
     const id = r[`aLink.${associatedEntityPrimaryIdAttribute}`];
     const name = r[`aLink.${associatedEntityPrimaryNameAttribute}`];
     return {
-      [intersectPrimaryIdAttribute]: r[intersectPrimaryIdAttribute],
-      [associatedEntityPrimaryIdAttribute]: id,
-      [associatedEntityPrimaryNameAttribute]: name,
-    } as ComponentFramework.WebApi.Entity;
+      entityReference: {
+        id: id,
+        name: name,
+        etn: associatedEntity,
+      },
+      key: id,
+      name: name,
+      data: {
+        [intersectPrimaryIdAttribute]: r[intersectPrimaryIdAttribute],
+        [associatedEntityPrimaryIdAttribute]: id,
+        [associatedEntityPrimaryNameAttribute]: name,
+      } as ComponentFramework.WebApi.Entity
+    } as ILookupItem
   });
 }
 
