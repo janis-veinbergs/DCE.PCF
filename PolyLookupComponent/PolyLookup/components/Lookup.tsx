@@ -250,7 +250,7 @@ const LookupBase: React.FunctionComponent<ILookupProps> = ({
               : undefined;
             //return TagPickerBase.defaultProps.onRenderItem(props);
             const item = props.item as ILookupItem;
-            return <LookupItem styles={styles} {...props} item={item} />;
+            return <LookupItem styles={styles} {...props} item={item} imageUrl={item.entityIconUrl ?? undefined} />;
           }}
           onRenderSuggestionsItem={React.useCallback((tag: ILookupItem) => {
             const data = tag.data;

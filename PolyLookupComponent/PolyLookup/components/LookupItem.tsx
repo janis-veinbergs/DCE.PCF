@@ -13,6 +13,7 @@ export type EntityReference = {
 export type ILookupItem = ITag & {
   data: ComponentFramework.WebApi.Entity;
   entityReference: EntityReference;
+  entityIconUrl: string | null;
 }
 
 export type ILookupItemProps = IPickerItemProps<ILookupItem>

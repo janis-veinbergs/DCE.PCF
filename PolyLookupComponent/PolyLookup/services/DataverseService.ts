@@ -40,6 +40,7 @@ const tableDefinitionColumns = [
   "EntitySetName",
   "DisplayCollectionName",
   "IsQuickCreateEnabled",
+  "IconVectorName"
 ];
 
 const viewDefinitionColumns = ["savedqueryid", "name", "fetchxml", "layoutjson", "querytype"];
@@ -76,7 +77,8 @@ export function useSelectedItems(
         metadata?.associatedIntesectAttribute,
         metadata?.associatedEntity.LogicalName,
         metadata?.associatedEntity.PrimaryIdAttribute,
-        metadata?.associatedEntity.PrimaryNameAttribute
+        metadata?.associatedEntity.PrimaryNameAttribute,
+        metadata?.associatedEntity.IconVectorName,
       ),
     enabled:
       !!metadata?.intersectEntity.EntitySetName &&
@@ -368,7 +370,8 @@ export async function retrieveAssociatedRecords(
   associatedIntersectAttribute: string | undefined,
   associatedEntity: string | undefined,
   associatedEntityPrimaryIdAttribute: string | undefined,
-  associatedEntityPrimaryNameAttribute: string | undefined
+  associatedEntityPrimaryNameAttribute: string | undefined,
+  associatedEntityIconVectorName: string | null | undefined,
 ) {
   if (
     typeof currentRecordId === "undefined" ||
@@ -379,7 +382,8 @@ export async function retrieveAssociatedRecords(
     typeof associatedIntersectAttribute === "undefined" ||
     typeof associatedEntity === "undefined" ||
     typeof associatedEntityPrimaryIdAttribute === "undefined" ||
-    typeof associatedEntityPrimaryNameAttribute === "undefined"
+    typeof associatedEntityPrimaryNameAttribute === "undefined" || 
+    typeof associatedEntityIconVectorName === "undefined"
   ) {
     return Promise.reject(new Error("Invalid arguments"));
   }
@@ -407,6 +411,7 @@ export async function retrieveAssociatedRecords(
         name: name,
         etn: associatedEntity,
       },
+      entityIconUrl: !!associatedEntityIconVectorName ? `/webresources/${associatedEntityIconVectorName}` : null,
       key: id,
       name: name,
       data: {

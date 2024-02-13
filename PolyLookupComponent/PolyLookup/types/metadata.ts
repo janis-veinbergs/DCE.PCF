@@ -40,6 +40,7 @@ export interface IEntityDefinition {
   };
   DisplayCollectionNameLocalized: string;
   IsQuickCreateEnabled: boolean;
+  IconVectorName: string | null;
 }
 
 interface IViewRow {
