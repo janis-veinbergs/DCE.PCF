@@ -10,7 +10,9 @@ import {
   IViewDefinition,
   IViewLayout,
 } from "../types/metadata";
+import Handlebars from "handlebars";
 import { ILookupItem } from "PolyLookupConnectionGrid/components/LookupItem";
+import { createElementAttributes, getFetchXmlForQuery } from "./QueryParser";
 
 const nToNColumns = [
   "SchemaName",
@@ -123,10 +125,10 @@ export function useSelectedItemsGrid(
         throw new Error("record2id 'Record (To)' is mandatory to be used within grid view. Couldn't determine entity logical name");
       }
       return record2id.etn
-  });
+  }); 
   const metadata = useMetadataGrid(currentTable, entitiesWithinData, relationshipName);
   return useQuery({
-    queryKey: ["useSelectedItemsGrid"].concat(entitiesWithinData),
+    queryKey: ["useSelectedItemsGrid"].concat(Object.keys(records)),
     queryFn: () => {
       return Object.entries(records)
     .map(([_, value]) => {      
@@ -142,8 +144,13 @@ export function useSelectedItemsGrid(
           name: record2id.name,
           etn: record2id.etn,
         },
+        connectionReference: {
+          id: value.getRecordId(),
+          name: value.getNamedReference().name,
+          etn: value.getNamedReference().etn
+        },
         entityIconUrl: entityMetadata.associatedEntity.IconVectorName ? `/webresources/${entityMetadata.associatedEntity.IconVectorName}` : null,
-        key: record2id.id.guid,
+        key: value.getRecordId(),
         name: record2id.name,
         data: {
           [entityMetadata.associatedEntity.PrimaryIdAttribute as string]: record2id.id.guid,
@@ -275,6 +282,7 @@ export function getEntityDefinition(entityName: string | undefined) {
         .get<IEntityDefinition>(`/api/data/v${apiVersion}/EntityDefinitions(LogicalName='${entityName}')`, {
           params: {
             $select: tableDefinitionColumns.join(","),
+            $expand: "Attributes($select=LogicalName,AttributeOf)",
           },
         })
         .then((res) => {
@@ -327,6 +335,47 @@ export function useDefaultView(entityName: string | undefined, viewName: string 
   });
 }
 
+const parser = new DOMParser();
+const serializer = new XMLSerializer();
+export const getFetchXml = async (searchText: string, entityLogicalName: string, lookupView?: string, metadata?: IMetadata) => {
+  const fetchXmlTemplate = Handlebars.compile(metadata?.associatedView.fetchxml ?? "");
+  const fetchXmlMaybeDynamic = metadata?.associatedView.fetchxml ?? "";
+  let shouldDefaultSearch = false;
+  if (metadata?.associatedView.querytype === 64) {
+    shouldDefaultSearch = true;
+  } else {
+    if (
+      !fetchXmlMaybeDynamic.includes("{{PolyLookupSearch}}") &&
+      !fetchXmlMaybeDynamic.includes("{{ PolyLookupSearch}}") &&
+      !fetchXmlMaybeDynamic.includes("{{PolyLookupSearch }}") &&
+      !fetchXmlMaybeDynamic.includes("{{ PolyLookupSearch }}")
+    ) {
+      shouldDefaultSearch = true;
+    }
+
+    const currentRecord = getCurrentRecord();
+
+    return fetchXmlTemplate({
+      ...currentRecord,
+      PolyLookupSearch: searchText,
+    });
+  }
+
+  if (shouldDefaultSearch) {
+    // if lookup view is not specified and using default lookup fiew,
+    // add filter condition to fetchxml to support search
+    const fetchXmlForSearch = getFetchXmlForQuery(fetchXmlMaybeDynamic, searchText, metadata.associatedEntity.Attributes, {
+      wildcards: "bothWildcard"
+    }, createElementAttributes("filter", undefined,
+        createElementAttributes("condition", {
+          "attribute": metadata?.associatedEntity.PrimaryNameAttribute ?? "",
+          "operator": "like",
+          "value": `{0}`
+        })).outerHTML
+    );
+    return fetchXmlForSearch;
+  }
+};
 
 export async function getMetadata(
   currentTable: string | undefined,
@@ -485,7 +534,7 @@ export function retrieveMultipleFetch(
   count?: number,
   pagingCookies?: string
 ) {
-  if (typeof entitySetName === "undefined" || typeof fetchXml === "undefined")
+  if (!entitySetName || !fetchXml)
     return Promise.reject(new Error("Invalid entity set name or fetchXml"));
 
   const doc = new DOMParser().parseFromString(fetchXml, "application/xml");

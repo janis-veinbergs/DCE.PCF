@@ -14,8 +14,9 @@ export type EntityReference = {
 export type ILookupItem = ITag & {
   data: ComponentFramework.WebApi.Entity;
   entityReference: EntityReference;
+  connectionReference?: EntityReference;
   entityIconUrl: string | null;
-  metadata: IMetadata
+  metadata: IMetadata,
 }
 
 export type ILookupItemProps = IPickerItemProps<ILookupItem>
@@ -128,7 +129,7 @@ export const LookupItem: React.FunctionComponent<ILookupItemProps> = React.memo(
       selected={selected}
       disabled={disabled}
       enableTagFocusInDisabledPicker={enableTagFocusInDisabledPicker}
-      item={{ key: item.entityReference.id, name: item.entityReference.name }}
+      item={{ key: item.key, name: item.entityReference.name }}
       styles={uciLookupItemStyle}
       index={index}
       className={className}

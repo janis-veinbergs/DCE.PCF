@@ -3,28 +3,22 @@ import {
   IBasePickerSuggestionsProps,
 } from "@fluentui/react";
 import { QueryClient, QueryClientProvider, useMutation } from "@tanstack/react-query";
-import Handlebars from "handlebars";
 import React, { useCallback } from "react";
 import {
   createRecord,
   deleteRecord,
-  getCurrentRecord,
-  getDefaultView,
-  useDefaultView,
   useLanguagePack,
   useMetadataGrid,
   useSelectedItemsGrid,
 } from "../services/DataverseService";
 import { LanguagePack } from "../types/languagePack";
 import { IMetadata } from "../types/metadata";
-import { EntityReference, ILookupItem } from "./LookupItem";
+import { ILookupItem } from "./LookupItem";
 import { Lookup } from "./Lookup";
 import { useForceUpdate } from "@fluentui/react-hooks";
-import { Axios, AxiosError } from "axios";
+import { AxiosError } from "axios";
 
 const queryClient = new QueryClient();
-const parser = new DOMParser();
-const serializer = new XMLSerializer();
 
 export enum RelationshipTypeEnum {
   ManyToMany,
@@ -122,74 +116,19 @@ const Body = ({
   //     : languagePack.EmptyListDefaultMessage;
   // }
 
-  // const associatedFetchXml = metadata?.associatedView.fetchxml;
-  // filter query
-  const getFetchXml = React.useCallback((searchText: string, entityLogicalName: string) => {
-    const associatedFetchXml = useDefaultView(entityLogicalName, lookupView).data;
-    const fetchXmlTemplate = Handlebars.compile(associatedFetchXml ?? "");
-    const entityMetadata = metadata[entityLogicalName].data;
-
-    if (!entityMetadata) { return; }
-    const fetchXmlMaybeDynamic = associatedFetchXml?.fetchxml ?? "";
-    let shouldDefaultSearch = false;
-    if (!lookupView && associatedFetchXml?.querytype === 64) {
-      shouldDefaultSearch = true;
-    } else {
-      if (
-        !fetchXmlMaybeDynamic.includes("{{PolyLookupSearch}}") &&
-        !fetchXmlMaybeDynamic.includes("{{ PolyLookupSearch}}") &&
-        !fetchXmlMaybeDynamic.includes("{{PolyLookupSearch }}") &&
-        !fetchXmlMaybeDynamic.includes("{{ PolyLookupSearch }}")
-      ) {
-        shouldDefaultSearch = true;
-      }
-
-      const currentRecord = getCurrentRecord();
-
-      return fetchXmlTemplate({
-        ...currentRecord,
-        PolyLookupSearch: searchText,
-      });
-    }
-
-    if (shouldDefaultSearch) {
-      // if lookup view is not specified and using default lookup fiew,
-      // add filter condition to fetchxml to support search
-      const doc = parser.parseFromString(fetchXmlMaybeDynamic, "application/xml");
-      const entities = doc.documentElement.getElementsByTagName("entity");
-      for (let i = 0; i < entities.length; i++) {
-        const entity = entities[i];
-        if (entity.getAttribute("name") === entityMetadata.associatedEntity.LogicalName) {
-          const filter = doc.createElement("filter");
-          const condition = doc.createElement("condition");
-          condition.setAttribute("attribute", entityMetadata.associatedEntity.PrimaryNameAttribute ?? "");
-          condition.setAttribute("operator", "like");
-          condition.setAttribute("value", `%${searchText}%`);
-          filter.appendChild(condition);
-          entity.appendChild(filter);
-        }
-      }
-      return serializer.serializeToString(doc);
-    }
-  }, [metadata]);
-  // get selected items
   const {
     data: selectedItems,
     isInitialLoading: isLoadingSelectedItems,
-    isSuccess: isLoadingSelectedItemsSuccess,
-    refetch: selectedItemsRefetch,
   } = useSelectedItemsGrid(currentTable, relationshipName, lookupEntitiesArray, dataset.records);
-  // onChange?.(selectedItems?.map((i) => toEntityReference(i, metadata)));
-
 
   // associate query
   const associateQuery = useMutation({
     mutationFn: (item: ILookupItem) => createRecord(item.metadata.intersectEntity.EntitySetName, {
-      [`${metadata?.currentEntityNavigationPropertyName}@odata.bind`]: `/${item.metadata.currentEntity.EntitySetName}(${currentRecordId})`,
-      [`${metadata?.associatedEntityNavigationPropertyName}@odata.bind`]: `/${item.metadata.associatedEntity.EntitySetName}(${item.entityReference.id})`,
+      [`${item.metadata.currentEntityNavigationPropertyName}@odata.bind`]: `/${item.metadata.currentEntity.EntitySetName}(${currentRecordId})`,
+      [`${item.metadata.associatedEntityNavigationPropertyName}@odata.bind`]: `/${item.metadata.associatedEntity.EntitySetName}(${item.entityReference.id})`,
     }),
     onSuccess: () => {
-      selectedItemsRefetch();
+      // selectedItemsRefetch();
       dataset.refresh();
     },
     onError: (data: AxiosError) => {
@@ -199,9 +138,9 @@ const Body = ({
 
   // disassociate query
   const disassociateQuery = useMutation({
-    mutationFn: (item: ILookupItem) => deleteRecord(item.metadata?.intersectEntity.EntitySetName, item.entityReference.id),
+    mutationFn: (item: ILookupItem) => deleteRecord(item.metadata?.intersectEntity.EntitySetName, item.connectionReference?.id),
     onSuccess: () => {
-      selectedItemsRefetch();
+      // selectedItemsRefetch();
       dataset.refresh();
     },
     onError: (data: AxiosError) => {
@@ -212,7 +151,7 @@ const Body = ({
 
   const onPickerChange = useCallback((selectedTags?: ILookupItem[]): void => {
       const added = selectedTags?.filter(t => !selectedItems?.some(i => i.entityReference.id === t.entityReference.id));
-      const removed = selectedItems?.filter(i => !selectedTags?.some(t => t.entityReference.id === i.entityReference.id));
+      const removed = selectedItems?.filter(i => !selectedTags?.some(t => i.key === t.key));
       added?.forEach(toEntityReference => associateQuery.mutate(toEntityReference));
       removed?.forEach(toEntityReference => disassociateQuery.mutate(toEntityReference));
     },
@@ -227,9 +166,7 @@ const Body = ({
   const isDataLoading = (isLoadingMetadata || isLoadingSelectedItems || dataset.loading) && !shouldDisable();
 
   const isEmpty = (((selectedItems?.length == 0 && selectedItemsCreate?.length == 0) ?? true) || disabled) ?? true;
-  const result = {
-    
-  }
+
   return (
     <Lookup 
       metadata={React.useMemo(() => Object.entries(metadata).reduce((acc, [key, value]) => ({ ...acc, [key]: value.data }), {}), [metadata])}
@@ -245,7 +182,7 @@ const Body = ({
       languagePackPath={languagePackPath}
       pageSize={pageSize}
       lookupView={lookupView}
-      getFetchXml={getFetchXml}
+      // getFetchXml={getFetchXml}
       lookupEntities={lookupEntitiesArray}
       styles={React.useCallback(({ isFocused }) => ({
         root: { backgroundColor: "#fff", width: "100%" },

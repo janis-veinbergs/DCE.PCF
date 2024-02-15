@@ -17,7 +17,7 @@
       <domain></domain>
       -->
     </external-service-usage>
-    <data-set name="records" display-name-key="Records_Dataset_Display" cds-data-set-options="displayCommandBar:true;displayViewSelector:true;displayQuickFind:true" />
+    <data-set name="records" display-name-key="Records_Dataset_Display" cds-data-set-options="displayCommandBar:false;displayViewSelector:false;displayQuickFind:false" />
     <!-- property node identifies a specific, configurable piece of data that the control expects from CDS -->
     <property name="lookupView" display-name-key="Lookup View" description-key="The view name for the suggestion list when searching. Use system Lookup View when empty or not found" of-type="SingleLine.Text" usage="input" required="false" />        
     <property name="lookupEntities" display-name-key="Lookup Entities" description-key="List entities with comma which will be searched when connecting current record. These entities must be connection enabled." of-type="SingleLine.Text" usage="input" required="true" />        

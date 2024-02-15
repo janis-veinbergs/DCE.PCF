@@ -41,6 +41,13 @@ export interface IEntityDefinition {
   DisplayCollectionNameLocalized: string;
   IsQuickCreateEnabled: boolean;
   IconVectorName: string | null;
+  Attributes: IAttribute[];
+}
+
+interface IAttribute {
+  AttributeOf: string | null;
+  MetadataId: string;
+  LogicalName: string;
 }
 
 interface IViewRow {
