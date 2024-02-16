@@ -1,9 +1,9 @@
 import React from "react";
-import { IconButton, ILabelStyles, IStyle, Label, Stack } from "@fluentui/react";
+import { IconButton, IImageStyleProps, IImageStyles, ILabelStyles, ImageFit, IStyle, IStyleFunctionOrObject, Label, Stack, Image } from "@fluentui/react";
 import { useBoolean } from "@fluentui/react-hooks";
-
 export interface ISuggestionInfoProps {
   infoMap: Map<string, string>;
+  iconUrl?: string;
 }
 
 const commonStyle: IStyle = {
@@ -16,12 +16,21 @@ const commonStyle: IStyle = {
   whiteSpace: "nowrap",
   width: "100%",
 };
+const imageStyles: IStyleFunctionOrObject<IImageStyleProps, IImageStyles> = {
+  root: {
+    width: '16px',
+    height: '16px',
+    display: 'flex',
+    paddingLeft: '7px',
+    paddingRight: '7px'
+  }
+} 
 const primaryStyle: Partial<ILabelStyles> = { root: commonStyle };
 const secondaryStyle: Partial<ILabelStyles> = {
   root: { ...commonStyle, color: "#666" },
 };
 
-export const SuggestionInfo = ({ infoMap }: ISuggestionInfoProps) => {
+export const SuggestionInfo = ({ infoMap, iconUrl: iconUrl }: ISuggestionInfoProps) => {
   const [showMore, { toggle: toggleshowMore }] = useBoolean(false);
 
   let displayValueCount = 0;
@@ -32,6 +41,9 @@ export const SuggestionInfo = ({ infoMap }: ISuggestionInfoProps) => {
 
   return (
     <Stack horizontal grow styles={{ root: { width: "100%" } }}>
+      <Stack.Item align="center">
+        { iconUrl &&<Image src={iconUrl} styles={imageStyles} imageFit={ImageFit.centerContain} alt="" /> }
+      </Stack.Item>
       <Stack.Item grow align="stretch" styles={{ root: { minWidth: "0", padding: 10 } }}>
         {Array.from(infoMap).map(([key, value], index) => {
           if (value === "") return null;

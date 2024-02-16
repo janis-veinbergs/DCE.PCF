@@ -62,7 +62,6 @@ const Body = ({
   formType,
   defaultLanguagePack,
   languagePackPath,
-  onChange,
   dataset
 }: PolyLookupConnectionGridProps) => {
   if (!dataset.columns.some(x => x.name === "record2id")) {
@@ -100,7 +99,8 @@ const Body = ({
   const metadata = useMetadataGrid(
     currentTable,
     lookupEntitiesArray,
-    relationshipName
+    relationshipName,
+    clientUrl,
   );
   const isLoadingMetadata = metadata ? Object.values(metadata).some(x => x.isLoading) : false;
   const isLoadingMetadataSuccess = metadata ? Object.values(metadata).every(x => x.isSuccess) : false;
@@ -119,7 +119,7 @@ const Body = ({
   const {
     data: selectedItems,
     isInitialLoading: isLoadingSelectedItems,
-  } = useSelectedItemsGrid(currentTable, relationshipName, lookupEntitiesArray, dataset.records);
+  } = useSelectedItemsGrid(currentTable, relationshipName, lookupEntitiesArray, dataset.records, clientUrl);
 
   // associate query
   const associateQuery = useMutation({

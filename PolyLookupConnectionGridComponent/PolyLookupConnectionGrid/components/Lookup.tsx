@@ -1,5 +1,5 @@
-import { BasePicker, concatStyleSetsWithProps, IBasePickerProps, IBasePickerStyleProps, IBasePickerStyles, Icon, IIconStyles, IInputProps, IObjectWithKey, ISpinnerStyles, IStyle, IStyleFunctionOrObject, Spinner, styled, TagItem, TagItemSuggestion } from '@fluentui/react';
-import { getBasePickerStyles, IBasePickerSuggestionsProps, IPickerItemProps, ITag, ITagItemProps, ITagItemStyleProps, ITagItemStyles, TagPickerBase, ValidationState } from '@fluentui/react/lib/Pickers';
+import { BasePicker, Callout, concatStyleSetsWithProps, DirectionalHint, IBasePickerProps, IBasePickerStyleProps, IBasePickerStyles, Icon, IIconStyles, IInputProps, IObjectWithKey, ISpinnerStyles, IStyle, IStyleFunctionOrObject, Spinner, styled, TagItem, TagItemSuggestion } from '@fluentui/react';
+import { getBasePickerStyles, IBasePickerSuggestionsProps, IPickerItemProps, ISuggestionsProps, ITag, ITagItemProps, ITagItemStyleProps, ITagItemStyles, TagPickerBase, ValidationState } from '@fluentui/react/lib/Pickers';
 import React from 'react';
 import {
   getDefaultView,
@@ -103,20 +103,22 @@ const iconStyles: IIconStyles = { root: iconStyle }
 
 const getTextFromItem = (item: ILookupItem) => item.entityReference.name;
 
-function getSuggestionTags(
-  suggestions: ComponentFramework.WebApi.Entity[] | undefined,
-  metadata: IMetadata | undefined
-) {
-  return (
-    suggestions?.map((entity) => ({
-        /* note this key is referencedEntity id - when data will be refreshed, it will be connectionid */
-        key: entity[metadata?.associatedEntity.PrimaryIdAttribute ?? ""] ?? "",
-        name: entity[metadata?.associatedEntity.PrimaryNameAttribute ?? ""] ?? "",
-        data: entity,
-        entityReference: toEntityReference(entity, metadata),
-        metadata: metadata,
-      } as ILookupItem)) ?? []
-  )
+const getSuggestionTags = (suggestions?: FilterQueryResponse[]) =>
+  suggestions?.flatMap(({ result: entities, metadata }) => 
+    entities.map(entity => ({
+      /* note this key is referencedEntity id - when data will be refreshed, it will be connectionid */
+      key: entity[metadata?.associatedEntity.PrimaryIdAttribute ?? ""] ?? "",
+      name: entity[metadata?.associatedEntity.PrimaryNameAttribute ?? ""] ?? "",
+      data: entity,
+      entityReference: toEntityReference(entity, metadata),
+      entityIconUrl: metadata?.associatedEntity.IconVectorName ? `${metadata?.clientUrl ?? ""}/webresources/${metadata?.associatedEntity.IconVectorName}` : null,
+      metadata: metadata,
+    } as ILookupItem))
+  ) ?? [];
+
+type FilterQueryResponse = {
+    metadata?: IMetadata,
+    result: ComponentFramework.WebApi.Entity[]
 }
 
 const LookupBase: React.FunctionComponent<ILookupProps> = ({
@@ -152,17 +154,22 @@ const LookupBase: React.FunctionComponent<ILookupProps> = ({
 
     // filter query
   const filterQuery = useMutation({
-    mutationFn: async ({ searchText, pageSizeParam, metadata }: { searchText: string; pageSizeParam?: number, metadata?: IMetadata }) => {
-      const fetchXml = await getFetchXml(searchText, lookupEntityName, lookupView, metadata)
-      return retrieveMultipleFetch(associatedTableSetName, fetchXml, 1, pageSizeParam)
+    mutationFn: async ({ searchText, pageSizeParam, metadata }: { searchText: string; pageSizeParam?: number, metadata?: Record<string, IMetadata> }) => {
+      const fetchXmls = await Promise.all(lookupEntities.map(async x => ({ entity: x, fetchXml: await getFetchXml(searchText, x, lookupView, metadata?.[x])})))
+      const results = await Promise.all(fetchXmls.map(async x => ({
+        metadata:  metadata?.[x.entity],
+        result: await retrieveMultipleFetch(metadata?.[x.entity].associatedEntity.EntitySetName, x.fetchXml, 1, pageSizeParam),
+      }) as FilterQueryResponse));
+      //const fetchXml = await getFetchXml(searchText, lookupEntityName, lookupView, metadata)
+      return results;
     },
   });
   const filterSuggestions = React.useCallback(
-    async (filterText: string, selectedTag?: ILookupItem[], metadata?: IMetadata): Promise<ILookupItem[]> => {
-      const results = await filterQuery.mutateAsync({ searchText: filterText, pageSizeParam: pageSize, metadata: entityMetadata });
-      return getSuggestionTags(results, entityMetadata);
+    async (filterText: string, selectedTag?: ILookupItem[], metadata?: Record<string, IMetadata>): Promise<ILookupItem[]> => {
+      const results = await filterQuery.mutateAsync({ searchText: filterText, pageSizeParam: pageSize, metadata: metadata });
+      return getSuggestionTags(results);
     },
-    [entityMetadata, filterQuery, pageSize]
+    [filterQuery, pageSize]
   );
 
   const pickerSuggestionsProps: IBasePickerSuggestionsProps = React.useMemo(() => ({
@@ -206,20 +213,33 @@ const LookupBase: React.FunctionComponent<ILookupProps> = ({
       const results = await filterQuery.mutateAsync({
         searchText: filterText,
         pageSizeParam: (pageSize ?? 50) * 2 + 1,
-        metadata: entityMetadata
+        metadata: metadata
       });
-      return getSuggestionTags(results, entityMetadata);
+      return getSuggestionTags(results);
     },
-    [entityMetadata, filterQuery, pageSize]
+    [filterQuery, metadata, pageSize]
   );
 
   const showAllSuggestions = React.useCallback(
     async (selectedTags?: ILookupItem[]): Promise<ILookupItem[]> => {
-      const results = await filterQuery.mutateAsync({ searchText: "", pageSizeParam: pageSize, metadata: entityMetadata });
-      return getSuggestionTags(results, entityMetadata);
+      const results = await filterQuery.mutateAsync({ searchText: "", pageSizeParam: pageSize, metadata: metadata });
+      return getSuggestionTags(results);
     },
-    [entityMetadata, filterQuery, pageSize]
-  );
+    [filterQuery, metadata, pageSize]
+  );3
+
+  const onRenderSuggestionItem = React.useCallback((item: ILookupItem) => {
+    const infoMap = new Map<string, string>();
+    //useDefaultView(entityLogicalName, lookupView).data
+    item.metadata.associatedView.layoutjson.Rows?.at(0)?.Cells?.forEach((cell) => {
+      let displayValue = item.data[cell.Name + "@OData.Community.Display.V1.FormattedValue"];
+      if (!displayValue) {
+        displayValue = item.data[cell.Name];
+      }
+      infoMap.set(cell.Name, displayValue ?? "");
+    });
+    return <SuggestionInfo infoMap={infoMap} iconUrl={item.entityIconUrl ?? undefined} />
+  }, [])
 
   return (
     <>
@@ -244,20 +264,9 @@ const LookupBase: React.FunctionComponent<ILookupProps> = ({
               : undefined;
             //return TagPickerBase.defaultProps.onRenderItem(props);
             const item = props.item as ILookupItem;
-            return <LookupItem styles={styles} {...props} item={item} imageUrl={item.entityIconUrl ?? undefined} />;
+            return <LookupItem styles={styles} {...props} item={item} iconUrl={item.entityIconUrl ?? undefined} />;
           }, [disabled])}
-          onRenderSuggestionsItem={React.useCallback((item: ILookupItem) => {
-            const infoMap = new Map<string, string>();
-            //useDefaultView(entityLogicalName, lookupView).data
-            item.metadata.associatedView.layoutjson.Rows?.at(0)?.Cells?.forEach((cell) => {
-              let displayValue = item.data[cell.Name + "@Oitem..Community.Display.V1.FormattedValue"];
-              if (!displayValue) {
-                displayValue = item.data[cell.Name];
-              }
-              infoMap.set(cell.Name, displayValue ?? "");
-            });
-            return <SuggestionInfo infoMap={infoMap}></SuggestionInfo>;
-          }, [])}
+          onRenderSuggestionsItem={onRenderSuggestionItem}
           resolveDelay={100}
           inputProps={React.useMemo(() => ({
             placeholder: getPlaceholder(),

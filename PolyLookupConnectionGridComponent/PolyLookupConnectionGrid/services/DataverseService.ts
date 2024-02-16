@@ -66,13 +66,14 @@ export function useMetadataGrid(
   currentTable: string,
   referencedTables: string[],
   relationshipName: string,
+  clientUrl: string,
   // lookupView: string | undefined
 ) {
-  console.count(`useMetadataGrid, ${currentTable}, ${referencedTables.join(",")}, ${relationshipName}`);
+  console.count(`useMetadataGrid, ${currentTable}, ${referencedTables.join(",")}, ${relationshipName}, ${clientUrl}`);
   const queries = useQueries({
     queries: referencedTables.map((referencedTable) => ({
-      queryKey: ["metadata", currentTable, referencedTable, relationshipName/*, lookupView*/],
-      queryFn: () => getMetadataGrid(currentTable, referencedTable, relationshipName/*, lookupView*/),
+      queryKey: ["metadata", currentTable, referencedTable, relationshipName, clientUrl],
+      queryFn: () => getMetadataGrid(currentTable, referencedTable, relationshipName, clientUrl),
       enabled: !!currentTable && !!referencedTable && !!relationshipName,
     }))
   });
@@ -86,7 +87,7 @@ export function useMetadataGrid(
 export function useSelectedItems(
   metadata: IMetadata | undefined,
   currentRecordId: string,
-  formType: XrmEnum.FormType | undefined
+  formType: XrmEnum.FormType | undefined,
 ) {
   return useQuery({
     queryKey: ["selectedItems", metadata, currentRecordId, formType],
@@ -102,6 +103,7 @@ export function useSelectedItems(
         metadata?.associatedEntity.PrimaryIdAttribute,
         metadata?.associatedEntity.PrimaryNameAttribute,
         metadata?.associatedEntity.IconVectorName,
+        metadata?.clientUrl
       ),
     enabled:
       !!metadata?.intersectEntity.EntitySetName &&
@@ -117,7 +119,8 @@ export function useSelectedItemsGrid(
   currentTable: string,
   relationshipName: string,
   validEntityLogicalNames: string[],
-  records: Record<string, ComponentFramework.PropertyHelper.DataSetApi.EntityRecord>
+  records: Record<string, ComponentFramework.PropertyHelper.DataSetApi.EntityRecord>,
+  clientUrl: string,
 ) {
   const entitiesWithinData = Object.values(records).map(value => {
     const record2id = value.getValue("record2id") as ComponentFramework.EntityReference | null;
@@ -125,8 +128,9 @@ export function useSelectedItemsGrid(
         throw new Error("record2id 'Record (To)' is mandatory to be used within grid view. Couldn't determine entity logical name");
       }
       return record2id.etn
-  }); 
-  const metadata = useMetadataGrid(currentTable, entitiesWithinData, relationshipName);
+  });
+  const entitiesNeedMedata = entitiesWithinData.concat(validEntityLogicalNames);
+  const metadata = useMetadataGrid(currentTable, entitiesNeedMedata, relationshipName, clientUrl);
   return useQuery({
     queryKey: ["useSelectedItemsGrid"].concat(Object.keys(records)),
     queryFn: () => {
@@ -149,7 +153,7 @@ export function useSelectedItemsGrid(
           name: value.getNamedReference().name,
           etn: value.getNamedReference().etn
         },
-        entityIconUrl: entityMetadata.associatedEntity.IconVectorName ? `/webresources/${entityMetadata.associatedEntity.IconVectorName}` : null,
+        entityIconUrl: entityMetadata.associatedEntity.IconVectorName ? `${entityMetadata.clientUrl}/webresources/${entityMetadata.associatedEntity.IconVectorName}` : null,
         key: value.getRecordId(),
         name: record2id.name,
         data: {
@@ -456,7 +460,7 @@ export async function getMetadataGrid(
   currentTable: string | undefined,
   referencedTable: string | undefined,
   relationshipName: string | undefined,
-  // associatedViewName: string | undefined
+  clientUrl: string,
 ): Promise<IMetadata> {
   if (!currentTable || !referencedTable || !relationshipName)
     return Promise.reject(new Error("Invalid arguments"));
@@ -496,6 +500,7 @@ export async function getMetadataGrid(
       associatedIntesectAttribute,
       currentEntityNavigationPropertyName,
       associatedEntityNavigationPropertyName,
+      clientUrl,
     };
   } catch (error) {
     console.log(error);
@@ -569,6 +574,7 @@ export async function retrieveAssociatedRecords(
   associatedEntityPrimaryIdAttribute: string | undefined,
   associatedEntityPrimaryNameAttribute: string | undefined,
   associatedEntityIconVectorName: string | null | undefined,
+  clientUrl?: string,
 ) {
   if (
     typeof currentRecordId === "undefined" ||
@@ -608,7 +614,7 @@ export async function retrieveAssociatedRecords(
         name: name,
         etn: associatedEntity,
       },
-      entityIconUrl: !!associatedEntityIconVectorName ? `/webresources/${associatedEntityIconVectorName}` : null,
+      entityIconUrl: !!associatedEntityIconVectorName ? `${clientUrl ?? ""}/webresources/${associatedEntityIconVectorName}` : null,
       key: id,
       name: name,
       data: {

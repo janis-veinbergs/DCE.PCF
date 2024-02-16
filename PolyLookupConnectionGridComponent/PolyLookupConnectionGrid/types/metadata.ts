@@ -104,6 +104,7 @@ export interface IMetadata {
   associatedIntesectAttribute: string;
   currentEntityNavigationPropertyName?: string;
   associatedEntityNavigationPropertyName?: string;
+  clientUrl?: string;
 }
 
 export const isOneToMany = (r: IRelationshipDefinition | undefined): r is IOneToManyRelationship => {

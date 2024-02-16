@@ -22,7 +22,7 @@ export type ILookupItem = ITag & {
 export type ILookupItemProps = IPickerItemProps<ILookupItem>
   & Pick<ITagItemProps, "className" | "enableTagFocusInDisabledPicker" | "title" | "styles" | "theme">
   & {
-    imageUrl?: string
+    iconUrl?: string
   };
   
 export const uciLookupItemStyle = (props: ITagItemStyleProps): Partial<ITagItemStyles> => ({
@@ -120,7 +120,7 @@ export const LookupItem: React.FunctionComponent<ILookupItemProps> = React.memo(
     removeButtonAriaLabel,
     title,
     styles,
-    imageUrl,
+    iconUrl: imageUrl,
     ...props }: ILookupItemProps) => {
   return (
     
