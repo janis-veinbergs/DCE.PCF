@@ -311,8 +311,8 @@ type SearchOptions = {
  */
 export function getFetchXmlForQuery(
     fetchXml: string,
-    searchTerm = "",
-    attributeMetadata: IEntityDefinition["Attributes"],
+    searchTerm?: string,
+    attributeMetadata?: IEntityDefinition["Attributes"],
     { wildcards = "none", recordLimit, nolock = true, removeOrder = false, distinct = true}: Partial<SearchOptions> = {},
     additionalFilter?: string,
     additionalAttributes?: string[],
@@ -331,7 +331,7 @@ export function getFetchXmlForQuery(
 
     //For lookup attributes, if we directly filter by lookup attribute, it expects guid and will return error: An exception System.FormatException was thrown while trying to convert input value 'a%' to attribute 'deac_servicecontract.deac_accountid'. Expected type of attribute value: System.Guid. Exception raised: Guid should contain 32 digits with 4 dashes (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx).
     //So we must replace it to extended virtual attribute that has suffix: name
-    const doNotQueryDirectlyAttributes = attributeMetadata.filter(x => x.AttributeOf);
+    const doNotQueryDirectlyAttributes = attributeMetadata?.filter(x => x.AttributeOf);
     if (additionalFilter && additionalFilter != "") {
         addCustomFilter(fetchElement, additionalFilter);
     }
@@ -345,7 +345,7 @@ export function getFetchXmlForQuery(
     const conditions = fetchElement.querySelectorAll("filter[isquickfindfields='1'] > condition");
     conditions.forEach(element => {
         const logicalName = element.getAttribute('attribute');
-        const found = doNotQueryDirectlyAttributes.find(x => x.AttributeOf === logicalName);
+        const found = doNotQueryDirectlyAttributes?.find(x => x.AttributeOf === logicalName);
         if (found) {
             element.setAttribute('attribute', found.LogicalName);
         }
@@ -366,15 +366,18 @@ export function getFetchXmlForQuery(
         : fetchElement.querySelectorAll(`condition[value='${QuickFindPlaceholder.Float_4}"']`)?.forEach(x => x.remove());
 
 
-    let textSearchTerm = searchTerm ?? "";
-    if (wildcards == "prefixWildcard" || wildcards == "bothWildcard") {
-        textSearchTerm = '%' + textSearchTerm.substring(textSearchTerm.startsWith('*') ? 1 : 0);
+    if (searchTerm !== undefined) {
+        let textSearchTerm = searchTerm ?? "";
+        if (wildcards == "prefixWildcard" || wildcards == "bothWildcard") {
+            textSearchTerm = '%' + textSearchTerm.substring(textSearchTerm.startsWith('*') ? 1 : 0);
+        }
+        if (wildcards == "suffixWildcard" || wildcards == "bothWildcard") {
+            textSearchTerm = textSearchTerm.substring(0, textSearchTerm.length - (textSearchTerm.endsWith('*') ? 1 : 0)) + '%';
+        }
+        const fetchXmlModified = fetchElement.outerHTML.replaceAll(QuickFindPlaceholder.Text_0, xmlEncodeForFetchXml(textSearchTerm))
+        return fetchXmlModified;
     }
-    if (wildcards == "suffixWildcard" || wildcards == "bothWildcard") {
-        textSearchTerm = textSearchTerm.substring(0, textSearchTerm.length - (textSearchTerm.endsWith('*') ? 1 : 0)) + '%';
-    }
-    const fetchXmlModified = fetchElement.outerHTML.replaceAll(QuickFindPlaceholder.Text_0, xmlEncodeForFetchXml(textSearchTerm))
-    return fetchXmlModified;
+    return fetchElement.outerHTML;
 }
 
 function addCustomFilter(fetchXml: HTMLElement, customFilter: string) {

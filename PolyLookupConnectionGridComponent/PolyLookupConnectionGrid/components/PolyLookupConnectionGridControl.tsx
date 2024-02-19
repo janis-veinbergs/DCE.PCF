@@ -1,13 +1,11 @@
 import {
   IBasePickerStyles,
-  IBasePickerSuggestionsProps,
 } from "@fluentui/react";
 import { QueryClient, QueryClientProvider, useMutation } from "@tanstack/react-query";
-import React, { useCallback } from "react";
+import React, { useCallback, useEffect } from "react";
 import {
   createRecord,
   deleteRecord,
-  useLanguagePack,
   useMetadataGrid,
   useSelectedItemsGrid,
 } from "../services/DataverseService";
@@ -15,10 +13,15 @@ import { LanguagePack } from "../types/languagePack";
 import { IMetadata } from "../types/metadata";
 import { ILookupItem } from "./LookupItem";
 import { Lookup } from "./Lookup";
-import { useForceUpdate } from "@fluentui/react-hooks";
 import { AxiosError } from "axios";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      refetchOnWindowFocus: false
+    }
+  }
+});
 
 export enum RelationshipTypeEnum {
   ManyToMany,
@@ -67,31 +70,12 @@ const Body = ({
   if (!dataset.columns.some(x => x.name === "record2id")) {
     throw new Error(`record2id column is mandatory for grid view ${dataset.getViewId()}`);
   };
-  const forceUpdate = useForceUpdate();
   const [selectedItemsCreate, setSelectedItemsCreate] = React.useState<ComponentFramework.WebApi.Entity[]>([]);
-
-  const { data: loadedLanguagePack } = useLanguagePack(languagePackPath, defaultLanguagePack);
-
-  const languagePack = loadedLanguagePack ?? defaultLanguagePack;
-
-  const pickerSuggestionsProps: IBasePickerSuggestionsProps = {
-    suggestionsHeaderText: languagePack.SuggestionListHeaderDefaultLabel,
-    noResultsFoundText: languagePack.EmptyListDefaultMessage,
-    forceResolveText: languagePack.AddNewLabel,
-    resultsFooter: () => <div>{languagePack.NoMoreRecordsMessage}</div>,
-    resultsFooterFull: () => <div>{languagePack.SuggestionListFullMessage}</div>,
-    resultsMaximumNumber: (pageSize ?? 50) * 2,
-    searchForMoreText: languagePack.LoadMoreLabel,
-  };
-
   const shouldDisable = () => formType !== XrmEnum.FormType.Update;
-
-  // const unique = (value: any, index: number, array: any[]) => array.indexOf(value) === index;
-  // const entitiesReferenced = Object.entries(records)
-  //   .map(([key, value]) => (value as IConnectionEntity)._record2id_value?.etn)
-  //   .filter(unique);
-  const lookupEntitiesArray = lookupEntities?.split(",").map(x => x.trim()) ?? [];
-  console.log("lookupEntitiesArray", lookupEntitiesArray);
+  const lookupEntitiesArray = React.useMemo(() => lookupEntities?.split(",").map(x => x.trim()) ?? [], [lookupEntities]);
+  useEffect(() => {
+    console.log("lookupEntitiesArray", lookupEntitiesArray);
+  }, [lookupEntitiesArray]);
   if (lookupEntitiesArray.length === 0) {
     //Valid case when there are initially no connections. Don't throw, rather lets find a way to add new entries.
     throw new Error("lookupEntities not set");
@@ -103,18 +87,6 @@ const Body = ({
     clientUrl,
   );
   const isLoadingMetadata = metadata ? Object.values(metadata).some(x => x.isLoading) : false;
-  const isLoadingMetadataSuccess = metadata ? Object.values(metadata).every(x => x.isSuccess) : false;
-
-
-    // if (metadata && isLoadingMetadataSuccess) {
-  //   pickerSuggestionsProps.suggestionsHeaderText = metadata.associatedEntity.DisplayCollectionNameLocalized
-  //     ? sprintf(languagePack.SuggestionListHeaderLabel, metadata.associatedEntity.DisplayCollectionNameLocalized)
-  //     : languagePack.SuggestionListHeaderDefaultLabel;
-
-  //   pickerSuggestionsProps.noResultsFoundText = metadata.associatedEntity.DisplayCollectionNameLocalized
-  //     ? sprintf(languagePack.EmptyListMessage, metadata.associatedEntity.DisplayCollectionNameLocalized)
-  //     : languagePack.EmptyListDefaultMessage;
-  // }
 
   const {
     data: selectedItems,
@@ -128,7 +100,6 @@ const Body = ({
       [`${item.metadata.associatedEntityNavigationPropertyName}@odata.bind`]: `/${item.metadata.associatedEntity.EntitySetName}(${item.entityReference.id})`,
     }),
     onSuccess: () => {
-      // selectedItemsRefetch();
       dataset.refresh();
     },
     onError: (data: AxiosError) => {
@@ -140,7 +111,6 @@ const Body = ({
   const disassociateQuery = useMutation({
     mutationFn: (item: ILookupItem) => deleteRecord(item.metadata?.intersectEntity.EntitySetName, item.connectionReference?.id),
     onSuccess: () => {
-      // selectedItemsRefetch();
       dataset.refresh();
     },
     onError: (data: AxiosError) => {
@@ -159,21 +129,23 @@ const Body = ({
   );
 
   const onItemSelected = useCallback(
-    (item?: ILookupItem): ILookupItem | null => item && !selectedItems?.some((i) => i.key === item.key) ? item : null,
+    (item?: ILookupItem): ILookupItem | null => {
+      return item && !selectedItems?.some(() => item.key === item.key) ? item : null
+    },
     [selectedItems]
   );
 
   const isDataLoading = (isLoadingMetadata || isLoadingSelectedItems || dataset.loading) && !shouldDisable();
-
   const isEmpty = (((selectedItems?.length == 0 && selectedItemsCreate?.length == 0) ?? true) || disabled) ?? true;
+  const metadataObject = React.useMemo(() => Object.values(metadata).every(m => m.isSuccess) ? Object.entries(metadata).reduce((acc, [key, value]) => value.isSuccess ? ({ ...acc, [key]: value.data }) : acc, {}) : undefined, [metadata]);
 
   return (
     <Lookup 
-      metadata={React.useMemo(() => Object.entries(metadata).reduce((acc, [key, value]) => ({ ...acc, [key]: value.data }), {}), [metadata])}
+      metadata={metadataObject}
       formType={formType}
       disabled={disabled}
       selectedItems={selectedItems}
-      pickerSuggestionsProps={pickerSuggestionsProps}
+      // pickerSuggestionsProps={pickerSuggestionsProps}
       onChange={onPickerChange}
       onItemSelected={onItemSelected}
       isEmpty={isEmpty}

@@ -1,21 +1,18 @@
-import { BasePicker, Callout, concatStyleSetsWithProps, DirectionalHint, IBasePickerProps, IBasePickerStyleProps, IBasePickerStyles, Icon, IIconStyles, IInputProps, IObjectWithKey, ISpinnerStyles, IStyle, IStyleFunctionOrObject, Spinner, styled, TagItem, TagItemSuggestion } from '@fluentui/react';
-import { getBasePickerStyles, IBasePickerSuggestionsProps, IPickerItemProps, ISuggestionsProps, ITag, ITagItemProps, ITagItemStyleProps, ITagItemStyles, TagPickerBase, ValidationState } from '@fluentui/react/lib/Pickers';
+import { BasePicker, concatStyleSetsWithProps, IBasePickerProps, IBasePickerStyleProps, IBasePickerStyles, Icon, IIconStyles, ISpinnerStyles, IStyle, IStyleFunctionOrObject, Spinner, styled, TagItemSuggestion } from '@fluentui/react';
+import { getBasePickerStyles, IBasePickerSuggestionsProps, IPickerItemProps, ITagItemStyleProps, ITagItemStyles, TagPickerBase } from '@fluentui/react/lib/Pickers';
 import React from 'react';
 import {
-  getDefaultView,
-  getMetadataGrid,
   retrieveMultipleFetch,
   useLanguagePack,
-  getFetchXml,
 } from "../services/DataverseService";
-import { IMetadata, IViewDefinition } from 'PolyLookupConnectionGrid/types/metadata';
+import { IMetadata } from '../types/metadata';
 
-import { useMutation, UseMutationResult } from '@tanstack/react-query';
-import { LanguagePack } from 'PolyLookupConnectionGrid/types/languagePack';
+import { useMutation } from '@tanstack/react-query';
+import { LanguagePack } from '../types/languagePack';
 import { sprintf } from 'sprintf-js';
-import { AxiosResponse } from 'axios';
 import { SuggestionInfo } from './SuggestionInfo';
 import { ILookupItem, LookupItem } from './LookupItem';
+import { getFetchXmlForQuery } from '../services/QueryParser';
 
 type ILookupPropsInternal = {
   /** Number of results for autocomplete to be returned */
@@ -154,38 +151,35 @@ const LookupBase: React.FunctionComponent<ILookupProps> = ({
 
     // filter query
   const filterQuery = useMutation({
-    mutationFn: async ({ searchText, pageSizeParam, metadata }: { searchText: string; pageSizeParam?: number, metadata?: Record<string, IMetadata> }) => {
-      const fetchXmls = await Promise.all(lookupEntities.map(async x => ({ entity: x, fetchXml: await getFetchXml(searchText, x, lookupView, metadata?.[x])})))
-      const results = await Promise.all(fetchXmls.map(async x => ({
-        metadata:  metadata?.[x.entity],
-        result: await retrieveMultipleFetch(metadata?.[x.entity].associatedEntity.EntitySetName, x.fetchXml, 1, pageSizeParam),
-      }) as FilterQueryResponse));
-      //const fetchXml = await getFetchXml(searchText, lookupEntityName, lookupView, metadata)
-      return results;
-    },
+    mutationFn: async ({ searchText, pageSizeParam, metadata }: { searchText: string; pageSizeParam?: number, metadata?: Record<string, IMetadata> }) => (
+      Promise.all(lookupEntities.map(async x => ({
+        metadata:  metadata?.[x],
+        result: await retrieveMultipleFetch(
+          metadata?.[x].associatedEntity.EntitySetName,
+          getFetchXmlForQuery(metadata?.[x].associatedViewFetchXml ?? "", searchText, undefined, {wildcards: "suffixWildcard"}),
+          1,
+          pageSizeParam
+        ),
+      }) as FilterQueryResponse))
+    ),
   });
   const filterSuggestions = React.useCallback(
-    async (filterText: string, selectedTag?: ILookupItem[], metadata?: Record<string, IMetadata>): Promise<ILookupItem[]> => {
+    async (filterText: string): Promise<ILookupItem[]> => {
       const results = await filterQuery.mutateAsync({ searchText: filterText, pageSizeParam: pageSize, metadata: metadata });
       return getSuggestionTags(results);
     },
-    [filterQuery, pageSize]
+    [filterQuery, metadata, pageSize]
   );
 
   const pickerSuggestionsProps: IBasePickerSuggestionsProps = React.useMemo(() => ({
-    suggestionsHeaderText: entityMetadata?.associatedEntity.DisplayCollectionNameLocalized
-      ? sprintf(languagePack.SuggestionListHeaderLabel, entityMetadata?.associatedEntity.DisplayCollectionNameLocalized)
-      : languagePack.SuggestionListHeaderDefaultLabel,
-    noResultsFoundText:  entityMetadata?.associatedEntity.DisplayCollectionNameLocalized
-      ? sprintf(languagePack.EmptyListMessage, entityMetadata?.associatedEntity.DisplayCollectionNameLocalized)
-      : languagePack.EmptyListDefaultMessage,
+    suggestionsHeaderText: languagePack.SuggestionListHeaderDefaultLabel,
+    noResultsFoundText: languagePack.EmptyListDefaultMessage,
     forceResolveText: languagePack.AddNewLabel,
     resultsFooter: () => <div>{languagePack.NoMoreRecordsMessage}</div>,
     resultsFooterFull: () => <div>{languagePack.SuggestionListFullMessage}</div>,
     resultsMaximumNumber: (pageSize ?? 50) * 2,
     searchForMoreText: languagePack.LoadMoreLabel,
-  }), [entityMetadata?.associatedEntity.DisplayCollectionNameLocalized, languagePack.SuggestionListHeaderLabel, languagePack.SuggestionListHeaderDefaultLabel, languagePack.EmptyListMessage, languagePack.EmptyListDefaultMessage, languagePack.AddNewLabel, languagePack.LoadMoreLabel, languagePack.NoMoreRecordsMessage, languagePack.SuggestionListFullMessage, pageSize]);
-  const associatedTableSetName = entityMetadata?.associatedEntity.EntitySetName ?? "";
+  }), [languagePack.SuggestionListHeaderDefaultLabel, languagePack.EmptyListDefaultMessage, languagePack.AddNewLabel, languagePack.LoadMoreLabel, languagePack.NoMoreRecordsMessage, languagePack.SuggestionListFullMessage, pageSize]);
   const getPlaceholder = React.useCallback(() => {
     if (formType === XrmEnum.FormType.Create) {
       if (!outputSelectedItems) {

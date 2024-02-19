@@ -5,9 +5,10 @@
     "typeRoots": ["./node_modules/@types"],
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
-    "module": "es2015",
+    "module": "ES2020",
     "lib": ["ES2021", "DOM"],
     "moduleResolution": "node",
+    "target": "ES2021",
   },
   "exclude": [
     "../../xrmtypings/**/*",

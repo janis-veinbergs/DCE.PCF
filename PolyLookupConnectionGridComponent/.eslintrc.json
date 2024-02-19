@@ -20,6 +20,8 @@
   "rules": {
     "no-unused-vars": "off",
     "no-explicit-any": "off",
+    /** Using typescript - prop valdiation not needed */
+    "react/prop-types": "off",
     "@typescript-eslint/no-empty-interface": "off"
   },
   "settings": {

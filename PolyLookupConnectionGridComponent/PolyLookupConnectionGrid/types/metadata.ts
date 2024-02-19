@@ -100,6 +100,8 @@ export interface IMetadata {
   intersectEntity: IEntityDefinition;
   associatedEntity: IEntityDefinition;
   associatedView: IViewDefinition;
+  /** The fetchxml differs from purely lookup view because it combines filters from quick find view */
+  associatedViewFetchXml: string;
   currentIntesectAttribute: string;
   associatedIntesectAttribute: string;
   currentEntityNavigationPropertyName?: string;

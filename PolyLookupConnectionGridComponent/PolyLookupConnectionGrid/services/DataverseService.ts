@@ -49,31 +49,20 @@ const viewDefinitionColumns = ["savedqueryid", "name", "fetchxml", "layoutjson",
 
 const apiVersion = "9.1";
 
-export function useMetadata(
-  currentTable: string,
-  relationshipName: string,
-  relationship2Name: string | undefined,
-  lookupView: string | undefined
-) {
-  return useQuery({
-    queryKey: ["metadata", currentTable, relationshipName, relationship2Name, lookupView],
-    queryFn: () => getMetadata(currentTable, relationshipName, relationship2Name, lookupView),
-    enabled: !!currentTable && !!relationshipName,
-  });
-}
-
 export function useMetadataGrid(
   currentTable: string,
   referencedTables: string[],
   relationshipName: string,
   clientUrl: string,
   // lookupView: string | undefined
-) {
-  console.count(`useMetadataGrid, ${currentTable}, ${referencedTables.join(",")}, ${relationshipName}, ${clientUrl}`);
+  ) {
   const queries = useQueries({
     queries: referencedTables.map((referencedTable) => ({
       queryKey: ["metadata", currentTable, referencedTable, relationshipName, clientUrl],
-      queryFn: () => getMetadataGrid(currentTable, referencedTable, relationshipName, clientUrl),
+      queryFn: () => {
+        console.count(`useMetadataGrid, ${currentTable}, ${referencedTables.join(",")}, ${relationshipName}, ${clientUrl}`);
+        return getMetadataGrid(currentTable, referencedTable, relationshipName, clientUrl)
+      },
       enabled: !!currentTable && !!referencedTable && !!relationshipName,
     }))
   });
@@ -122,15 +111,16 @@ export function useSelectedItemsGrid(
   records: Record<string, ComponentFramework.PropertyHelper.DataSetApi.EntityRecord>,
   clientUrl: string,
 ) {
-  const entitiesWithinData = Object.values(records).map(value => {
+  const entitiesNeedMetadata = new Set(Object.values(records).map(value => {
     const record2id = value.getValue("record2id") as ComponentFramework.EntityReference | null;
       if (!record2id?.etn) {
         throw new Error("record2id 'Record (To)' is mandatory to be used within grid view. Couldn't determine entity logical name");
       }
       return record2id.etn
-  });
-  const entitiesNeedMedata = entitiesWithinData.concat(validEntityLogicalNames);
-  const metadata = useMetadataGrid(currentTable, entitiesNeedMedata, relationshipName, clientUrl);
+  }));
+  validEntityLogicalNames.forEach(x => entitiesNeedMetadata.add(x));
+  //Leave only unique values in entitiesNeedMetadata
+  const metadata = useMetadataGrid(currentTable, validEntityLogicalNames, relationshipName, clientUrl);
   return useQuery({
     queryKey: ["useSelectedItemsGrid"].concat(Object.keys(records)),
     queryFn: () => {
@@ -303,6 +293,10 @@ export async function getViewDefinition(
   viewName: string | undefined,
   queryType?: number | undefined
 ) {
+  // const key = `${entityName} ${viewName} ${queryType}`;
+  // const cachedView = sessionStorage.getItem(key);
+  // if (cachedView) { return cachedView; }
+
   if (typeof entityName === "undefined") return Promise.reject(new Error("Invalid arguments"));
 
   const result = await axios.get<{ value: IViewDefinition[] }>(`/api/data/v${apiVersion}/savedqueries`, {
@@ -331,6 +325,8 @@ export async function getDefaultView(entityName: string | undefined, viewName: s
   return defaultView;
 }
 
+export const getQuickSearchView = (entityName: string | undefined) => getViewDefinition(entityName, undefined, 4)
+
 export function useDefaultView(entityName: string | undefined, viewName: string | undefined) {
   return useQuery({
     queryKey: ["defaultView", entityName, viewName],
@@ -338,124 +334,6 @@ export function useDefaultView(entityName: string | undefined, viewName: string 
     enabled: !!entityName,
   });
 }
-
-const parser = new DOMParser();
-const serializer = new XMLSerializer();
-export const getFetchXml = async (searchText: string, entityLogicalName: string, lookupView?: string, metadata?: IMetadata) => {
-  const fetchXmlTemplate = Handlebars.compile(metadata?.associatedView.fetchxml ?? "");
-  const fetchXmlMaybeDynamic = metadata?.associatedView.fetchxml ?? "";
-  let shouldDefaultSearch = false;
-  if (metadata?.associatedView.querytype === 64) {
-    shouldDefaultSearch = true;
-  } else {
-    if (
-      !fetchXmlMaybeDynamic.includes("{{PolyLookupSearch}}") &&
-      !fetchXmlMaybeDynamic.includes("{{ PolyLookupSearch}}") &&
-      !fetchXmlMaybeDynamic.includes("{{PolyLookupSearch }}") &&
-      !fetchXmlMaybeDynamic.includes("{{ PolyLookupSearch }}")
-    ) {
-      shouldDefaultSearch = true;
-    }
-
-    const currentRecord = getCurrentRecord();
-
-    return fetchXmlTemplate({
-      ...currentRecord,
-      PolyLookupSearch: searchText,
-    });
-  }
-
-  if (shouldDefaultSearch) {
-    // if lookup view is not specified and using default lookup fiew,
-    // add filter condition to fetchxml to support search
-    const fetchXmlForSearch = getFetchXmlForQuery(fetchXmlMaybeDynamic, searchText, metadata.associatedEntity.Attributes, {
-      wildcards: "bothWildcard"
-    }, createElementAttributes("filter", undefined,
-        createElementAttributes("condition", {
-          "attribute": metadata?.associatedEntity.PrimaryNameAttribute ?? "",
-          "operator": "like",
-          "value": `{0}`
-        })).outerHTML
-    );
-    return fetchXmlForSearch;
-  }
-};
-
-export async function getMetadata(
-  currentTable: string | undefined,
-  relationshipName: string | undefined,
-  relationship2Name: string | undefined,
-  associatedViewName: string | undefined
-): Promise<IMetadata> {
-  if (typeof currentTable === "undefined" || typeof relationshipName === "undefined")
-    return Promise.reject(new Error("Invalid arguments"));
-
-  let relationship1: IManyToManyRelationship | IOneToManyRelationship;
-  let relationship2: IOneToManyRelationship | undefined;
-  let intersectEntityName = "";
-  let associatedEntityName: string | undefined;
-
-  if (typeof relationship2Name === "undefined") {
-    relationship1 = await getManytoManyRelationShipDefinition(currentTable, relationshipName);
-    intersectEntityName = relationship1.IntersectEntityName;
-    associatedEntityName =
-      relationship1.Entity1LogicalName === currentTable
-        ? relationship1.Entity2LogicalName
-        : relationship1.Entity1LogicalName;
-  } else {
-    relationship1 = await getOnetoManyRelationShipDefinition(currentTable, relationshipName);
-    intersectEntityName = relationship1.ReferencingEntity;
-    relationship2 = await getManytoOneRelationShipDefinition(intersectEntityName, relationship2Name);
-    associatedEntityName = relationship2?.ReferencedEntity;
-  }
-
-  try {
-    const [currentEntity, intersectEntity, associatedEntity, associatedView] = await Promise.all([
-      getEntityDefinition(currentTable),
-      getEntityDefinition(intersectEntityName),
-      getEntityDefinition(associatedEntityName),
-      getDefaultView(associatedEntityName, associatedViewName),
-    ]);
-
-    let currentIntesectAttribute: string;
-    let associatedIntesectAttribute: string;
-    let currentEntityNavigationPropertyName: string | undefined;
-    let associatedEntityNavigationPropertyName: string | undefined;
-    if (isManyToMany(relationship1)) {
-      currentIntesectAttribute =
-        relationship1.Entity1LogicalName === currentTable
-          ? relationship1.Entity1IntersectAttribute
-          : relationship1.Entity2IntersectAttribute;
-
-      associatedIntesectAttribute =
-        relationship1.Entity1LogicalName === currentTable
-          ? relationship1.Entity2IntersectAttribute
-          : relationship1.Entity1IntersectAttribute;
-    } else {
-      currentIntesectAttribute = relationship1.ReferencingAttribute;
-      associatedIntesectAttribute = relationship2?.ReferencingAttribute ?? "";
-      currentEntityNavigationPropertyName = relationship1.ReferencingEntityNavigationPropertyName;
-      associatedEntityNavigationPropertyName = relationship2?.ReferencingEntityNavigationPropertyName;
-    }
-
-    return {
-      relationship1,
-      relationship2,
-      currentEntity,
-      intersectEntity,
-      associatedEntity,
-      associatedView,
-      currentIntesectAttribute,
-      associatedIntesectAttribute,
-      currentEntityNavigationPropertyName,
-      associatedEntityNavigationPropertyName,
-    };
-  } catch (error) {
-    console.log(error);
-    throw error;
-  }
-}
-
 export async function getMetadataGrid(
   currentTable: string | undefined,
   referencedTable: string | undefined,
@@ -466,10 +344,11 @@ export async function getMetadataGrid(
     return Promise.reject(new Error("Invalid arguments"));
 
   
-  const [relationship1, relationship2, associatedView] = await Promise.all([
+  const [relationship1, relationship2, associatedView, quickSearchView] = await Promise.all([
     getOnetoManyRelationShipDefinition(currentTable, relationshipName),
     getConnectionRelationShipDefinition(referencedTable),
-    getDefaultView(referencedTable)
+    getDefaultView(referencedTable),
+    getQuickSearchView(referencedTable)
   ]);
   const intersectEntityName = "connection";
   const associatedEntityName: string | undefined = referencedTable;  
@@ -477,7 +356,7 @@ export async function getMetadataGrid(
   if (!relationship2) { throw new Error(`Relationship for connection to ${referencedTable} not found`); }
 
   try {
-    const [currentEntity, intersectEntity, associatedEntity/*, associatedView*/] = await Promise.all([
+    const [currentEntity, intersectEntity, associatedEntity] = await Promise.all([
       getEntityDefinition(currentTable),
       getEntityDefinition(intersectEntityName),
       getEntityDefinition(associatedEntityName),
@@ -489,6 +368,21 @@ export async function getMetadataGrid(
     const currentEntityNavigationPropertyName = relationship1.ReferencingEntityNavigationPropertyName;
     const associatedEntityNavigationPropertyName = relationship2?.ReferencingEntityNavigationPropertyName;
 
+
+    //Get filter which has isquickfindfields = 1 using DOM
+    const doc = new DOMParser().parseFromString(quickSearchView.fetchxml, "application/xml");
+    const filter = doc.querySelector("filter[isquickfindfields='1']")?.outerHTML;
+    // if lookup view is not specified and using default lookup fiew,
+    // add filter condition to fetchxml to support search
+    const associatedViewFetchXml = getFetchXmlForQuery(associatedView.fetchxml, undefined, associatedEntity.Attributes, undefined, 
+      filter ?? createElementAttributes("filter", undefined,
+        createElementAttributes("condition", {
+          "attribute": associatedEntity.PrimaryNameAttribute ?? "",
+          "operator": "like",
+          "value": `{0}`
+        })).outerHTML
+    );
+
     return {
       relationship1,
       relationship2,
@@ -496,6 +390,7 @@ export async function getMetadataGrid(
       intersectEntity,
       associatedEntity,
       associatedView,
+      associatedViewFetchXml,
       currentIntesectAttribute,
       associatedIntesectAttribute,
       currentEntityNavigationPropertyName,
