@@ -243,11 +243,11 @@ export function getConnectionRelationShipDefinition(
           {
             params: {
               $select: oneToNColumns.join(","),
-              $filter: `ReferencingEntity eq 'connection' and ReferencedEntity eq '${referencedEntity}'`,
+              $filter: `ReferencingEntity eq 'connection' and ReferencingAttribute eq 'record2id' and ReferencedEntity eq '${referencedEntity}'`,
             },
           }
         )
-        .then((res) => res.data.value.at(1));
+        .then((res) => res.data.value.at(0));
 }
 
 export function getManytoOneRelationShipDefinition(

@@ -4,6 +4,7 @@ import { useBoolean } from "@fluentui/react-hooks";
 export interface ISuggestionInfoProps {
   infoMap: Map<string, string>;
   iconUrl?: string;
+  onClick?: React.MouseEventHandler<HTMLElement>;
 }
 
 const commonStyle: IStyle = {
@@ -30,7 +31,7 @@ const secondaryStyle: Partial<ILabelStyles> = {
   root: { ...commonStyle, color: "#666" },
 };
 
-export const SuggestionInfo = ({ infoMap, iconUrl: iconUrl }: ISuggestionInfoProps) => {
+export const SuggestionInfo = ({ infoMap, iconUrl, onClick }: ISuggestionInfoProps) => {
   const [showMore, { toggle: toggleshowMore }] = useBoolean(false);
 
   let displayValueCount = 0;
@@ -40,7 +41,7 @@ export const SuggestionInfo = ({ infoMap, iconUrl: iconUrl }: ISuggestionInfoPro
   });
 
   return (
-    <Stack horizontal grow styles={{ root: { width: "100%" } }}>
+    <Stack horizontal grow styles={{ root: { width: "100%" } }} onClick={onClick}>
       <Stack.Item align="center">
         { iconUrl &&<Image src={iconUrl} styles={imageStyles} imageFit={ImageFit.centerContain} alt="" /> }
       </Stack.Item>

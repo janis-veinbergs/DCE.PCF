@@ -141,6 +141,10 @@
     <value>Suggested %s</value>
     <comment>Suggested { Table Plural Name }</comment>
   </data>
+  <data name="SuggestionListHeaderLabelPickEntity" xml:space="preserve">
+    <value>Search all or select entity</value>
+    <comment>Search all or select entity</comment>
+  </data>
   <data name="LoadingMessage" xml:space="preserve">
     <value>Loading</value>
     <comment>Message shown when data is loading</comment>

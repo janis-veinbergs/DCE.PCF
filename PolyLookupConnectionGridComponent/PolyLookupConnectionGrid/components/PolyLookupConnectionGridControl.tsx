@@ -11,7 +11,7 @@ import {
 } from "../services/DataverseService";
 import { LanguagePack } from "../types/languagePack";
 import { IMetadata } from "../types/metadata";
-import { ILookupItem } from "./LookupItem";
+import { ILookupItem, ILookupPossibleItems, isLookupItem } from "./LookupItem";
 import { Lookup } from "./Lookup";
 import { AxiosError } from "axios";
 
@@ -35,6 +35,8 @@ export interface PolyLookupConnectionGridProps {
   relationshipName: string;
   clientUrl: string;
   lookupEntities?: string;
+  lookupEntitiesRoles?: string;// [{ entity: string, record1roleid: string, record2roleid: string}];
+  /** Roles to use when connecting records. We currently don't have a picker for roles when choosing records, so must be preconfigured with specific role. */
   lookupView?: string;
   pageSize?: number;
   disabled?: boolean;
@@ -45,7 +47,7 @@ export interface PolyLookupConnectionGridProps {
   dataset: ComponentFramework.PropertyTypes.DataSet;
 }
 
-
+export type EntityConfig = { [key: string]: { record1roleid: string, record2roleid: string } };
 
 const toEntityReference = (entity: ComponentFramework.WebApi.Entity, metadata: IMetadata | undefined) => ({
   id: entity[metadata?.associatedEntity.PrimaryIdAttribute ?? ""],
@@ -59,6 +61,7 @@ const Body = ({
   clientUrl,
   relationshipName,
   lookupEntities,
+  lookupEntitiesRoles,
   lookupView,
   pageSize,
   disabled,
@@ -72,14 +75,31 @@ const Body = ({
   };
   const [selectedItemsCreate, setSelectedItemsCreate] = React.useState<ComponentFramework.WebApi.Entity[]>([]);
   const shouldDisable = () => formType !== XrmEnum.FormType.Update;
-  const lookupEntitiesArray = React.useMemo(() => lookupEntities?.split(",").map(x => x.trim()) ?? [], [lookupEntities]);
-  useEffect(() => {
-    console.log("lookupEntitiesArray", lookupEntitiesArray);
-  }, [lookupEntitiesArray]);
-  if (lookupEntitiesArray.length === 0) {
+  const entityConfig = React.useMemo(() => {
+    const guidPairs = lookupEntitiesRoles?.split(";");
+    const entities = lookupEntities?.split(",").reduce((prev, cur, idx) => {
+      const entity = cur.trim() ?? [];
+      const role1 = guidPairs?.[idx]?.split(",")?.[0];
+      const role2 = guidPairs?.[idx]?.split(",")?.[1];
+      if (!role1) { throw new Error(`Role1 not set for entity ${entity}. Specify correct lookupEntitiesRoles. Item count must match lookupEntities.`); }
+      if (!role2) { throw new Error(`Role2 not set for entity ${entity}. Specify correct lookupEntitiesRoles. Item count must match lookupEntities.`); }
+      prev[entity] = {
+        record1roleid: role1,
+        record2roleid: role2,
+      };
+      return prev;
+    }, {} as EntityConfig)
+    return entities;
+  }, [lookupEntities, lookupEntitiesRoles]);
+  if (!entityConfig) {
+    throw new Error("lookupEntities not set");
+  }
+
+  if (Object.keys(entityConfig).length === 0) {
     //Valid case when there are initially no connections. Don't throw, rather lets find a way to add new entries.
     throw new Error("lookupEntities not set");
   };
+  const lookupEntitiesArray = React.useMemo(() => Object.keys(entityConfig), [entityConfig]);
   const metadata = useMetadataGrid(
     currentTable,
     lookupEntitiesArray,
@@ -98,6 +118,8 @@ const Body = ({
     mutationFn: (item: ILookupItem) => createRecord(item.metadata.intersectEntity.EntitySetName, {
       [`${item.metadata.currentEntityNavigationPropertyName}@odata.bind`]: `/${item.metadata.currentEntity.EntitySetName}(${currentRecordId})`,
       [`${item.metadata.associatedEntityNavigationPropertyName}@odata.bind`]: `/${item.metadata.associatedEntity.EntitySetName}(${item.entityReference.id})`,
+      [`record1roleid@odata.bind`]: `/connectionroles(${entityConfig[item.metadata.associatedEntity.LogicalName].record1roleid})`,
+      [`record2roleid@odata.bind`]: `/connectionroles(${entityConfig[item.metadata.associatedEntity.LogicalName].record2roleid})`,
     }),
     onSuccess: () => {
       dataset.refresh();
@@ -129,23 +151,23 @@ const Body = ({
   );
 
   const onItemSelected = useCallback(
-    (item?: ILookupItem): ILookupItem | null => {
-      return item && !selectedItems?.some(() => item.key === item.key) ? item : null
-    },
+    (item?: ILookupPossibleItems): ILookupItem | null => item && isLookupItem(item) && !selectedItems?.some((i) => i.key === item.key) ? item : null,
     [selectedItems]
   );
 
   const isDataLoading = (isLoadingMetadata || isLoadingSelectedItems || dataset.loading) && !shouldDisable();
   const isEmpty = (((selectedItems?.length == 0 && selectedItemsCreate?.length == 0) ?? true) || disabled) ?? true;
   const metadataObject = React.useMemo(() => Object.values(metadata).every(m => m.isSuccess) ? Object.entries(metadata).reduce((acc, [key, value]) => value.isSuccess ? ({ ...acc, [key]: value.data }) : acc, {}) : undefined, [metadata]);
-
+  const lookupEntitiesRolesArray = React.useMemo(() => lookupEntitiesRoles?.split(";").map((guidPair, idx) => {
+    const [record1roleid, record2roleid] = guidPair.split(",");
+    return { entity: entityConfig[idx], record1roleid, record2roleid }; 
+  }), [entityConfig, lookupEntitiesRoles]);
   return (
     <Lookup 
       metadata={metadataObject}
       formType={formType}
       disabled={disabled}
       selectedItems={selectedItems}
-      // pickerSuggestionsProps={pickerSuggestionsProps}
       onChange={onPickerChange}
       onItemSelected={onItemSelected}
       isEmpty={isEmpty}
@@ -154,7 +176,6 @@ const Body = ({
       languagePackPath={languagePackPath}
       pageSize={pageSize}
       lookupView={lookupView}
-      // getFetchXml={getFetchXml}
       lookupEntities={lookupEntitiesArray}
       styles={React.useCallback(({ isFocused }) => ({
         root: { backgroundColor: "#fff", width: "100%" },

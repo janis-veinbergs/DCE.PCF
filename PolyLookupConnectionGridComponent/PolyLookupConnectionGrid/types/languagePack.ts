@@ -5,6 +5,7 @@ export interface LanguagePack {
   EmptyListMessage: string;
   SuggestionListHeaderDefaultLabel: string;
   SuggestionListHeaderLabel: string;
+  SuggestionListHeaderLabelPickEntity: string;
   LoadingMessage: string;
   AddNewLabel: string;
   LoadMoreLabel: string;

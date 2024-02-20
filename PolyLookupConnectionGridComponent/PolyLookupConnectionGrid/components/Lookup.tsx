@@ -7,11 +7,11 @@ import {
 } from "../services/DataverseService";
 import { IMetadata } from '../types/metadata';
 
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { LanguagePack } from '../types/languagePack';
 import { sprintf } from 'sprintf-js';
 import { SuggestionInfo } from './SuggestionInfo';
-import { ILookupItem, LookupItem } from './LookupItem';
+import { ILookupItem, ILookupItemEntity, ILookupPossibleItems, isLookupItem, isLookupItemEntity, LookupItem } from './LookupItem';
 import { getFetchXmlForQuery } from '../services/QueryParser';
 
 type ILookupPropsInternal = {
@@ -28,12 +28,12 @@ type ILookupPropsInternal = {
   /** Add additional link-entity. Useful if want to fetch additional attribute from linked entity. to/from entities can be duplicate/alreayd existing under entity element and all specified attributes will be fetched.
   * Example: ['<link-entity name="account" from="accountid" to="deac_accountid" visible="false" link-type="outer" alias="accountnamealias"><attribute name="name" /></link-entity>'] */
   additionalLinkAttributes?: string[]
-} & IBasePickerProps<ILookupItem>
+} & IBasePickerProps<ILookupPossibleItems>
 
-class LookupBaseInternal extends BasePicker<ILookupItem, ILookupPropsInternal> {
+class LookupBaseInternal extends BasePicker<ILookupPossibleItems, ILookupPropsInternal> {
   public static defaultProps = {
-    onRenderItem: (props: IPickerItemProps<ILookupItem>) => <LookupItem {...props} />,
-    onRenderSuggestionsItem: (props: ILookupItem) => <TagItemSuggestion>{props.entityReference.name}</TagItemSuggestion>,
+    onRenderItem: (props: IPickerItemProps<ILookupPossibleItems>) => <LookupItem {...props} />,
+    onRenderSuggestionsItem: (props: ILookupPossibleItems) => <TagItemSuggestion>{props.name}</TagItemSuggestion>,
   };
   constructor(hasPickerProps: ILookupPropsInternal) {
     super(hasPickerProps);
@@ -98,7 +98,7 @@ const iconStyle: IStyle = {
 const spinnerStyles: ISpinnerStyles = { root: iconStyle }
 const iconStyles: IIconStyles = { root: iconStyle }
 
-const getTextFromItem = (item: ILookupItem) => item.entityReference.name;
+const getTextFromItem = (item: ILookupPossibleItems) => item.name;
 
 const getSuggestionTags = (suggestions?: FilterQueryResponse[]) =>
   suggestions?.flatMap(({ result: entities, metadata }) => 
@@ -135,7 +135,6 @@ const LookupBase: React.FunctionComponent<ILookupProps> = ({
   onItemSelected,
   selectedItems,
   lookupEntities,
-  lookupView,
   ...props
 }: ILookupProps
 ) => {
@@ -143,16 +142,34 @@ const LookupBase: React.FunctionComponent<ILookupProps> = ({
   const { data: loadedLanguagePack } = useLanguagePack(languagePackPath, defaultLanguagePack);
   const languagePack = loadedLanguagePack ?? defaultLanguagePack;
   const [showIcon, setShowIcon] = React.useState(false);
-  //TODO: Allow picking which entity to search for
-  const [lookupEntityName, setLookupEntityName] = React.useState(lookupEntities[0]);
-  //const [entityMetadata, setEntityMetadata] = React.useState(metadata?.[lookupEntityName]);
-  const entityMetadata = React.useMemo(() => metadata?.[lookupEntityName], [lookupEntityName, metadata])
+  const [lookupEntityName, setLookupEntityName] = React.useState<string | undefined>(lookupEntities.length === 1 ? lookupEntities[0] : undefined);
+  const entityMetadata = React.useMemo(() => lookupEntityName && metadata ? metadata[lookupEntityName] : undefined, [lookupEntityName, metadata])
 
+  const entitiesQuery = useQuery({
+    queryKey: ["entitiesQuery", ...lookupEntities],
+    queryFn: () => lookupEntities.map(entity => {
+      const m = metadata?.[entity];
+      return {
+        key: m?.associatedEntity.LogicalName ?? "",
+        name: m?.associatedEntity.DisplayNameLocalized ?? "",
+        logicalName: m?.associatedEntity.LogicalName ?? "",
+        entityIconUrl: !!m?.associatedEntity.IconVectorName ? `${m?.clientUrl ?? ""}/webresources/${m?.associatedEntity.IconVectorName}` : null
+      } as ILookupItemEntity
+    }),
+    enabled: !!metadata && lookupEntities.length > 0 }
+  );
+  const showEntityFilterSuggestions = React.useCallback(async (): Promise<ILookupPossibleItems[]> => {
+    if (lookupEntities.length === 1 || !entitiesQuery.data) {
+      return [];
+    }
+    return entitiesQuery.data;
+  }, [entitiesQuery.data, lookupEntities.length]);
 
     // filter query
   const filterQuery = useMutation({
-    mutationFn: async ({ searchText, pageSizeParam, metadata }: { searchText: string; pageSizeParam?: number, metadata?: Record<string, IMetadata> }) => (
-      Promise.all(lookupEntities.map(async x => ({
+    mutationFn: async ({ searchText, pageSizeParam, metadata }: { searchText: string; pageSizeParam?: number, metadata?: Record<string, IMetadata> }) => {
+      const entitiesToSearch = lookupEntityName ? [lookupEntityName] : lookupEntities;
+      return Promise.all(entitiesToSearch.map(async x => ({
         metadata:  metadata?.[x],
         result: await retrieveMultipleFetch(
           metadata?.[x].associatedEntity.EntitySetName,
@@ -161,7 +178,7 @@ const LookupBase: React.FunctionComponent<ILookupProps> = ({
           pageSizeParam
         ),
       }) as FilterQueryResponse))
-    ),
+    },
   });
   const filterSuggestions = React.useCallback(
     async (filterText: string): Promise<ILookupItem[]> => {
@@ -172,14 +189,18 @@ const LookupBase: React.FunctionComponent<ILookupProps> = ({
   );
 
   const pickerSuggestionsProps: IBasePickerSuggestionsProps = React.useMemo(() => ({
-    suggestionsHeaderText: languagePack.SuggestionListHeaderDefaultLabel,
-    noResultsFoundText: languagePack.EmptyListDefaultMessage,
+    suggestionsHeaderText: entityMetadata?.associatedEntity.DisplayCollectionNameLocalized
+      ? sprintf(languagePack.SuggestionListHeaderLabel, entityMetadata?.associatedEntity.DisplayCollectionNameLocalized)
+      : languagePack.SuggestionListHeaderDefaultLabel,
+    noResultsFoundText:  entityMetadata?.associatedEntity.DisplayCollectionNameLocalized
+      ? sprintf(languagePack.EmptyListMessage, entityMetadata?.associatedEntity.DisplayCollectionNameLocalized)
+      : languagePack.EmptyListDefaultMessage,
     forceResolveText: languagePack.AddNewLabel,
     resultsFooter: () => <div>{languagePack.NoMoreRecordsMessage}</div>,
     resultsFooterFull: () => <div>{languagePack.SuggestionListFullMessage}</div>,
     resultsMaximumNumber: (pageSize ?? 50) * 2,
     searchForMoreText: languagePack.LoadMoreLabel,
-  }), [languagePack.SuggestionListHeaderDefaultLabel, languagePack.EmptyListDefaultMessage, languagePack.AddNewLabel, languagePack.LoadMoreLabel, languagePack.NoMoreRecordsMessage, languagePack.SuggestionListFullMessage, pageSize]);
+  }), [entityMetadata?.associatedEntity.DisplayCollectionNameLocalized, languagePack.SuggestionListHeaderLabel, languagePack.SuggestionListHeaderDefaultLabel, languagePack.EmptyListMessage, languagePack.EmptyListDefaultMessage, languagePack.AddNewLabel, languagePack.LoadMoreLabel, languagePack.NoMoreRecordsMessage, languagePack.SuggestionListFullMessage, pageSize]);
   const getPlaceholder = React.useCallback(() => {
     if (formType === XrmEnum.FormType.Create) {
       if (!outputSelectedItems) {
@@ -203,7 +224,7 @@ const LookupBase: React.FunctionComponent<ILookupProps> = ({
   }, [entityMetadata?.associatedEntity.DisplayCollectionNameLocalized, formType, isDataLoading, isEmpty, languagePack.ControlIsNotAvailableMessage, languagePack.CreateFormNotSupportedMessage, languagePack.LoadingMessage, languagePack.Placeholder, languagePack.PlaceholderDefault, outputSelectedItems]);
 
   const showMoreSuggestions = React.useCallback(
-    async (filterText: string, selectedTag?: ILookupItem[]): Promise<ILookupItem[]> => {
+    async (filterText: string): Promise<ILookupItem[]> => {
       const results = await filterQuery.mutateAsync({
         searchText: filterText,
         pageSizeParam: (pageSize ?? 50) * 2 + 1,
@@ -214,25 +235,28 @@ const LookupBase: React.FunctionComponent<ILookupProps> = ({
     [filterQuery, metadata, pageSize]
   );
 
-  const showAllSuggestions = React.useCallback(
-    async (selectedTags?: ILookupItem[]): Promise<ILookupItem[]> => {
-      const results = await filterQuery.mutateAsync({ searchText: "", pageSizeParam: pageSize, metadata: metadata });
-      return getSuggestionTags(results);
-    },
-    [filterQuery, metadata, pageSize]
-  );3
-
-  const onRenderSuggestionItem = React.useCallback((item: ILookupItem) => {
-    const infoMap = new Map<string, string>();
-    //useDefaultView(entityLogicalName, lookupView).data
-    item.metadata.associatedView.layoutjson.Rows?.at(0)?.Cells?.forEach((cell) => {
-      let displayValue = item.data[cell.Name + "@OData.Community.Display.V1.FormattedValue"];
-      if (!displayValue) {
-        displayValue = item.data[cell.Name];
-      }
-      infoMap.set(cell.Name, displayValue ?? "");
-    });
-    return <SuggestionInfo infoMap={infoMap} iconUrl={item.entityIconUrl ?? undefined} />
+  const onClickEntityFilter = React.useCallback((_, item: ILookupItemEntity) => {
+    setLookupEntityName(item.logicalName);
+    pickerRef.current?.focus();
+  }, []);
+  const onRenderSuggestionItem = React.useCallback((item: ILookupPossibleItems) => {
+    if (isLookupItem(item)) {
+      const infoMap = new Map<string, string>();
+      //useDefaultView(entityLogicalName, lookupView).data
+      item.metadata.associatedView.layoutjson.Rows?.at(0)?.Cells?.forEach((cell) => {
+        let displayValue = item.data[cell.Name + "@OData.Community.Display.V1.FormattedValue"];
+        if (!displayValue) {
+          displayValue = item.data[cell.Name];
+        }
+        infoMap.set(cell.Name, displayValue ?? "");
+      });
+      return <SuggestionInfo infoMap={infoMap} iconUrl={item.entityIconUrl ?? undefined} />
+    } else if (isLookupItemEntity(item)) {
+      const infoMap = new Map<string, string>();
+      infoMap.set("displayName", item.name);
+      return <SuggestionInfo infoMap={infoMap} iconUrl={item.entityIconUrl ?? undefined} onClick={x => onClickEntityFilter(x, item)} />
+    }
+    return <></>
   }, [])
 
   return (
@@ -242,9 +266,9 @@ const LookupBase: React.FunctionComponent<ILookupProps> = ({
           ref={pickerRef}
           selectedItems={selectedItems}
           onResolveSuggestions={filterSuggestions}
-          onEmptyResolveSuggestions={showAllSuggestions}
+          onEmptyResolveSuggestions={showEntityFilterSuggestions}
           onGetMoreResults={showMoreSuggestions}
-          onChange={onChange}
+          onChange={(items) => onChange?.(items?.filter(isLookupItem))}
           onItemSelected={onItemSelected}
           styles={React.useCallback(x => concatStyleSetsWithProps(x, styles, uciLookupStyle), [styles])}
           theme={theme}
@@ -284,7 +308,7 @@ const LookupBase: React.FunctionComponent<ILookupProps> = ({
 };
 
 
-export interface ILookupProps extends Omit<ILookupPropsInternal, 'onResolveSuggestions'> {
+export interface ILookupProps extends Omit<ILookupPropsInternal, 'onResolveSuggestions' | 'onChange'> {
   metadata?: Record<string, IMetadata>;
   formType?: XrmEnum.FormType;
   lookupView?: string;
@@ -297,8 +321,8 @@ export interface ILookupProps extends Omit<ILookupPropsInternal, 'onResolveSugge
   itemLimit?: number;
   disabled?: boolean;
   onChange?: (items?: ILookupItem[] | undefined) => void
-  onItemSelected?: (selectedItem?: ILookupItem | undefined) => ILookupItem | PromiseLike<ILookupItem> | null;
-  selectedItems?: ILookupItem[] | undefined;
+  onItemSelected?: (selectedItem?: ILookupPossibleItems | undefined) => ILookupPossibleItems | PromiseLike<ILookupPossibleItems> | null;
+  selectedItems?: ILookupPossibleItems[] | undefined;
   lookupEntities: string[];
 }
 export const Lookup = styled<ILookupProps, IBasePickerStyleProps, IBasePickerStyles>(

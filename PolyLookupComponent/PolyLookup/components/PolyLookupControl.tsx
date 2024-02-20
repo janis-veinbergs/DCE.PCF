@@ -343,10 +343,7 @@ const Body = ({
       pageSize={pageSize}
       lookupView={lookupView}
       getFetchXml={getFetchXml}
-      styles={(props) => {
-        // eslint-disable-next-line react/prop-types
-        const isFocused = props.isFocused;
-        const pickerStyles: Partial<IBasePickerStyles> = {
+      styles={React.useCallback(({ isFocused }) => ({
           root: { backgroundColor: "#fff", width: "100%" },
           input: { minWidth: "0", display: disabled ? "none" : "inline-block" },
           text: {
@@ -362,9 +359,7 @@ const Body = ({
             },
             "&:hover:after": { backgroundColor: disabled ? "rgba(50, 50, 50, 0.1)" : "transparent" },
           },
-        };
-        return pickerStyles;
-      }}
+      } as Partial<IBasePickerStyles>), [])}
     />
   );
 };
