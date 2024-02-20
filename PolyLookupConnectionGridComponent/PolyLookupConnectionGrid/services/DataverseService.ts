@@ -282,7 +282,7 @@ export function getEntityDefinition(entityName: string | undefined) {
         .get<IEntityDefinition>(`/api/data/v${apiVersion}/EntityDefinitions(LogicalName='${entityName}')`, {
           params: {
             $select: tableDefinitionColumns.join(","),
-            $expand: "Attributes($select=LogicalName,AttributeOf)",
+            $expand: "Attributes($select=LogicalName,AttributeOf;$filter=AttributeType ne Microsoft.Dynamics.CRM.AttributeTypeCode'EntityName')",
           },
         })
         .then((res) => {
