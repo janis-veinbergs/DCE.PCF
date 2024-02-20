@@ -1,8 +1,9 @@
 import {
-  IBasePickerStyles,
+  concatStyleSetsWithProps,
+  IBasePickerStyleProps,
 } from "@fluentui/react";
 import { QueryClient, QueryClientProvider, useMutation } from "@tanstack/react-query";
-import React, { useCallback, useEffect } from "react";
+import React, { useCallback } from "react";
 import {
   createRecord,
   deleteRecord,
@@ -154,8 +155,26 @@ const Body = ({
     (item?: ILookupPossibleItems): ILookupItem | null => item && isLookupItem(item) && !selectedItems?.some((i) => i.key === item.key) ? item : null,
     [selectedItems]
   );
+  const styles = React.useCallback((props: IBasePickerStyleProps) => concatStyleSetsWithProps(props, {
+      root: { backgroundColor: "#fff", width: "100%" },
+      input: { minWidth: "0", display: disabled ? "none" : "inline-block" },
+      text: {
+        minWidth: "0",
+        borderColor: "transparent",
+        borderWidth: 1,
+        borderRadius: 1,
+        "&:after": {
+          backgroundColor: "transparent",
+          borderColor: props.isFocused ? "#666" : "transparent",
+          borderWidth: 1,
+          borderRadius: 1,
+        },
+        "&:hover:after": { backgroundColor: disabled ? "rgba(50, 50, 50, 0.1)" : "transparent" },
+      },
+  }), [disabled]);
 
-  const isDataLoading = (isLoadingMetadata || isLoadingSelectedItems || dataset.loading) && !shouldDisable();
+
+    const isDataLoading = (isLoadingMetadata || isLoadingSelectedItems || dataset.loading) && !shouldDisable();
   const isEmpty = (((selectedItems?.length == 0 && selectedItemsCreate?.length == 0) ?? true) || disabled) ?? true;
   const metadataObject = React.useMemo(() => Object.values(metadata).every(m => m.isSuccess) ? Object.entries(metadata).reduce((acc, [key, value]) => value.isSuccess ? ({ ...acc, [key]: value.data }) : acc, {}) : undefined, [metadata]);
   const lookupEntitiesRolesArray = React.useMemo(() => lookupEntitiesRoles?.split(";").map((guidPair, idx) => {
@@ -177,23 +196,7 @@ const Body = ({
       pageSize={pageSize}
       lookupView={lookupView}
       lookupEntities={lookupEntitiesArray}
-      styles={React.useCallback(({ isFocused }) => ({
-        root: { backgroundColor: "#fff", width: "100%" },
-        input: { minWidth: "0", display: disabled ? "none" : "inline-block" },
-        text: {
-          minWidth: "0",
-          borderColor: "transparent",
-          borderWidth: 1,
-          borderRadius: 1,
-          "&:after": {
-            backgroundColor: "transparent",
-            borderColor: isFocused ? "#666" : "transparent",
-            borderWidth: 1,
-            borderRadius: 1,
-          },
-          "&:hover:after": { backgroundColor: disabled ? "rgba(50, 50, 50, 0.1)" : "transparent" },
-        },
-    } as Partial<IBasePickerStyles>), [])}
+      styles={styles}
     />
   );
 };

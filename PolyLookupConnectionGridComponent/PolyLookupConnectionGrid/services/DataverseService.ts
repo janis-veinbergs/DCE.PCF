@@ -6,11 +6,9 @@ import {
   IManyToManyRelationship,
   IMetadata,
   IOneToManyRelationship,
-  isManyToMany,
   IViewDefinition,
   IViewLayout,
 } from "../types/metadata";
-import Handlebars from "handlebars";
 import { ILookupItem } from "PolyLookupConnectionGrid/components/LookupItem";
 import { createElementAttributes, getFetchXmlForQuery } from "./QueryParser";
 
@@ -57,14 +55,22 @@ export function useMetadataGrid(
   // lookupView: string | undefined
   ) {
   const queries = useQueries({
-    queries: referencedTables.map((referencedTable) => ({
-      queryKey: ["metadata", currentTable, referencedTable, relationshipName, clientUrl],
-      queryFn: () => {
-        console.count(`useMetadataGrid, ${currentTable}, ${referencedTables.join(",")}, ${relationshipName}, ${clientUrl}`);
-        return getMetadataGrid(currentTable, referencedTable, relationshipName, clientUrl)
-      },
-      enabled: !!currentTable && !!referencedTable && !!relationshipName,
-    }))
+    queries: referencedTables.map((referencedTable) => {
+      const key = ["useMetadataGrid", currentTable, referencedTable, relationshipName, clientUrl];
+      return {
+        queryKey: key,
+        queryFn: async () => {
+          //Use sessionStorage if not present.
+          const cached = window.sessionStorage.getItem(key.join(","));
+          if (cached) { return JSON.parse(cached) as IMetadata; }
+          console.count(`useMetadataGrid, ${currentTable}, ${referencedTables.join(",")}, ${relationshipName}, ${clientUrl}`);
+          const result = await getMetadataGrid(currentTable, referencedTable, relationshipName, clientUrl);
+          window.sessionStorage.setItem(key.join(","), JSON.stringify(result));
+          return result;
+        },
+        enabled: !!currentTable && !!referencedTable && !!relationshipName,
+      }
+    })
   });
   const metadata: Record<string, UseQueryResult<IMetadata>> = queries.reduce((prev, cur, index) => ({
     ...prev,
@@ -293,10 +299,6 @@ export async function getViewDefinition(
   viewName: string | undefined,
   queryType?: number | undefined
 ) {
-  // const key = `${entityName} ${viewName} ${queryType}`;
-  // const cachedView = sessionStorage.getItem(key);
-  // if (cachedView) { return cachedView; }
-
   if (typeof entityName === "undefined") return Promise.reject(new Error("Invalid arguments"));
 
   const result = await axios.get<{ value: IViewDefinition[] }>(`/api/data/v${apiVersion}/savedqueries`, {

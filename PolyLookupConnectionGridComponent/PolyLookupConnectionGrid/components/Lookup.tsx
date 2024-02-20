@@ -235,7 +235,7 @@ const LookupBase: React.FunctionComponent<ILookupProps> = ({
     [filterQuery, metadata, pageSize]
   );
 
-  const onClickEntityFilter = React.useCallback((_, item: ILookupItemEntity) => {
+  const onClickEntityFilter = React.useCallback((_: React.MouseEvent<HTMLElement, MouseEvent>, item: ILookupItemEntity) => {
     setLookupEntityName(item.logicalName);
     pickerRef.current?.focus();
   }, []);
@@ -270,13 +270,13 @@ const LookupBase: React.FunctionComponent<ILookupProps> = ({
           onGetMoreResults={showMoreSuggestions}
           onChange={(items) => onChange?.(items?.filter(isLookupItem))}
           onItemSelected={onItemSelected}
-          styles={React.useCallback(x => concatStyleSetsWithProps(x, styles, uciLookupStyle), [styles])}
+          styles={React.useCallback((x: IBasePickerStyleProps) => concatStyleSetsWithProps(x, styles, uciLookupStyle), [styles])}
           theme={theme}
           pickerSuggestionsProps={pickerSuggestionsProps}
           disabled={disabled}
           getTextFromItem={getTextFromItem}
           {...props}
-          onRenderItem={React.useCallback((props) => {
+          onRenderItem={React.useCallback((props: IPickerItemProps<ILookupPossibleItems>) => {
             const styles: IStyleFunctionOrObject<ITagItemStyleProps, ITagItemStyles> | undefined = disabled
               ? ({ close: { display: "none" } })
               : undefined;
