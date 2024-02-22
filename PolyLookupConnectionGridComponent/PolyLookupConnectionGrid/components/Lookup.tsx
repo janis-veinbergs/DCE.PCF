@@ -2,6 +2,7 @@ import { BasePicker, concatStyleSetsWithProps, IBasePickerProps, IBasePickerStyl
 import { getBasePickerStyles, IBasePickerSuggestionsProps, IPickerItemProps, ITagItemStyleProps, ITagItemStyles, TagPickerBase } from '@fluentui/react/lib/Pickers';
 import React from 'react';
 import {
+  getAxiosInstance,
   retrieveMultipleFetch,
   useLanguagePack,
 } from "../services/DataverseService";
@@ -53,14 +54,6 @@ const toEntityReference = (entity: ComponentFramework.WebApi.Entity, metadata: I
   name: entity[metadata?.associatedEntity.PrimaryNameAttribute ?? ""],
   etn: metadata?.associatedEntity.LogicalName ?? "",
 });
-
-const onClickLookupItem = (event: React.MouseEvent<Element>, item: ILookupItem, options?: Pick<Xrm.Navigation.EntityFormOptions, 'openInNewWindow'>) => {
-  Xrm.Navigation.openForm({
-    entityId: item.entityReference.id,
-    entityName: item.entityReference.etn,
-    openInNewWindow: options?.openInNewWindow
-  });
-};
 
 const uciLookupStyle = (props: IBasePickerStyleProps): Partial<IBasePickerStyles> => ({
   ...(props.disabled ? {
@@ -172,6 +165,7 @@ const LookupBase: React.FunctionComponent<ILookupProps> = ({
       return Promise.all(entitiesToSearch.map(async x => ({
         metadata:  metadata?.[x],
         result: await retrieveMultipleFetch(
+          getAxiosInstance(metadata?.[x].clientUrl ?? ""),
           metadata?.[x].associatedEntity.EntitySetName,
           getFetchXmlForQuery(metadata?.[x].associatedViewFetchXml ?? "", searchText, undefined, {wildcards: "suffixWildcard"}),
           1,
@@ -242,7 +236,6 @@ const LookupBase: React.FunctionComponent<ILookupProps> = ({
   const onRenderSuggestionItem = React.useCallback((item: ILookupPossibleItems) => {
     if (isLookupItem(item)) {
       const infoMap = new Map<string, string>();
-      //useDefaultView(entityLogicalName, lookupView).data
       item.metadata.associatedView.layoutjson.Rows?.at(0)?.Cells?.forEach((cell) => {
         let displayValue = item.data[cell.Name + "@OData.Community.Display.V1.FormattedValue"];
         if (!displayValue) {
@@ -257,7 +250,7 @@ const LookupBase: React.FunctionComponent<ILookupProps> = ({
       return <SuggestionInfo infoMap={infoMap} iconUrl={item.entityIconUrl ?? undefined} onClick={x => onClickEntityFilter(x, item)} />
     }
     return <></>
-  }, [])
+  }, [onClickEntityFilter])
 
   return (
     <>

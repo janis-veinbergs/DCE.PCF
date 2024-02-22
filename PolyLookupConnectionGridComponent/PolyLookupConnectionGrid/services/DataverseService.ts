@@ -1,9 +1,8 @@
 import { useQueries, useQuery, UseQueryResult } from "@tanstack/react-query";
-import axios from "axios";
+import axios, { AxiosInstance } from "axios";
 import { LanguagePack } from "../types/languagePack";
 import {
   IEntityDefinition,
-  IManyToManyRelationship,
   IMetadata,
   IOneToManyRelationship,
   IViewDefinition,
@@ -11,16 +10,6 @@ import {
 } from "../types/metadata";
 import { ILookupItem } from "PolyLookupConnectionGrid/components/LookupItem";
 import { createElementAttributes, getFetchXmlForQuery } from "./QueryParser";
-
-const nToNColumns = [
-  "SchemaName",
-  "Entity1LogicalName",
-  "Entity2LogicalName",
-  "Entity1IntersectAttribute",
-  "Entity2IntersectAttribute",
-  "RelationshipType",
-  "IntersectEntityName",
-];
 
 const oneToNColumns = [
   "SchemaName",
@@ -46,6 +35,19 @@ const tableDefinitionColumns = [
 const viewDefinitionColumns = ["savedqueryid", "name", "fetchxml", "layoutjson", "querytype"];
 
 const apiVersion = "9.1";
+let _axiosInstance: AxiosInstance | undefined;
+export const getAxiosInstance = (clientUrl: string) => (_axiosInstance
+    ? _axiosInstance
+    : _axiosInstance = axios.create({
+    baseURL: `${clientUrl}/api/data/v${apiVersion}/`,
+    headers: {
+      "OData-MaxVersion": "4.0",
+      "OData-Version": "4.0",
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    }
+  })
+)
 
 export function useMetadataGrid(
   currentTable: string,
@@ -64,7 +66,7 @@ export function useMetadataGrid(
           const cached = window.sessionStorage.getItem(key.join(","));
           if (cached) { return JSON.parse(cached) as IMetadata; }
           console.count(`useMetadataGrid, ${currentTable}, ${referencedTables.join(",")}, ${relationshipName}, ${clientUrl}`);
-          const result = await getMetadataGrid(currentTable, referencedTable, relationshipName, clientUrl);
+          const result = await getMetadataGrid(getAxiosInstance(clientUrl), currentTable, referencedTable, relationshipName, clientUrl);
           window.sessionStorage.setItem(key.join(","), JSON.stringify(result));
           return result;
         },
@@ -77,36 +79,6 @@ export function useMetadataGrid(
     [referencedTables[index]]: cur
   }), {});
   return metadata;
-}
-
-export function useSelectedItems(
-  metadata: IMetadata | undefined,
-  currentRecordId: string,
-  formType: XrmEnum.FormType | undefined,
-) {
-  return useQuery({
-    queryKey: ["selectedItems", metadata, currentRecordId, formType],
-    queryFn: () =>
-      retrieveAssociatedRecords(
-        currentRecordId,
-        metadata?.intersectEntity.LogicalName,
-        metadata?.intersectEntity.EntitySetName,
-        metadata?.intersectEntity.PrimaryIdAttribute,
-        metadata?.currentIntesectAttribute,
-        metadata?.associatedIntesectAttribute,
-        metadata?.associatedEntity.LogicalName,
-        metadata?.associatedEntity.PrimaryIdAttribute,
-        metadata?.associatedEntity.PrimaryNameAttribute,
-        metadata?.associatedEntity.IconVectorName,
-        metadata?.clientUrl
-      ),
-    enabled:
-      !!metadata?.intersectEntity.EntitySetName &&
-      !!metadata?.associatedEntity.EntitySetName &&
-      (formType === XrmEnum.FormType.Update ||
-        formType === XrmEnum.FormType.ReadOnly ||
-        formType === XrmEnum.FormType.Disabled),
-  });
 }
 
 /** Parse dataset records to ILookupItem */
@@ -202,33 +174,16 @@ export function getLanguagePack(
     .catch(() => languagePack);
 }
 
-export function getManytoManyRelationShipDefinition(
-  currentTable: string | undefined,
-  relationshipName: string | undefined
-) {
-  return typeof currentTable === "undefined" || typeof relationshipName === "undefined"
-    ? Promise.reject(new Error("Invalid table or relationship name"))
-    : axios
-        .get<IManyToManyRelationship>(
-          `/api/data/v${apiVersion}/EntityDefinitions(LogicalName='${currentTable}')/ManyToManyRelationships(SchemaName='${relationshipName}')`,
-          {
-            params: {
-              $select: nToNColumns.join(","),
-            },
-          }
-        )
-        .then((res) => res.data);
-}
-
 export function getOnetoManyRelationShipDefinition(
+  ax: AxiosInstance,
   currentTable: string | undefined,
   relationshipName: string | undefined
 ) {
   return typeof currentTable === "undefined" || typeof relationshipName === "undefined"
     ? Promise.reject(new Error("Invalid table or relationship name"))
-    : axios
+    : ax
         .get<IOneToManyRelationship>(
-          `/api/data/v${apiVersion}/EntityDefinitions(LogicalName='${currentTable}')/OneToManyRelationships(SchemaName='${relationshipName}')`,
+          `EntityDefinitions(LogicalName='${currentTable}')/OneToManyRelationships(SchemaName='${relationshipName}')`,
           {
             params: {
               $select: oneToNColumns.join(","),
@@ -239,13 +194,14 @@ export function getOnetoManyRelationShipDefinition(
 }
 
 export function getConnectionRelationShipDefinition(
+  ax: AxiosInstance,
   referencedEntity: string | undefined
 ) {
   return typeof referencedEntity === "undefined"
     ? Promise.reject(new Error("Invalid table or relationship name"))
-    : axios
+    : ax
         .get<{ value: IOneToManyRelationship[] }>(
-          `/api/data/v${apiVersion}/RelationshipDefinitions/Microsoft.Dynamics.CRM.OneToManyRelationshipMetadata`,
+          `RelationshipDefinitions/Microsoft.Dynamics.CRM.OneToManyRelationshipMetadata`,
           {
             params: {
               $select: oneToNColumns.join(","),
@@ -256,30 +212,11 @@ export function getConnectionRelationShipDefinition(
         .then((res) => res.data.value.at(0));
 }
 
-export function getManytoOneRelationShipDefinition(
-  currentTable: string | undefined,
-  relationshipName: string | undefined
-) {
-  return typeof currentTable === "undefined" || typeof relationshipName === "undefined"
-    ? Promise.reject(new Error("Invalid table or relationship name"))
-    : axios
-        .get<{ value: IOneToManyRelationship[] }>(
-          `/api/data/v${apiVersion}/RelationshipDefinitions/Microsoft.Dynamics.CRM.OneToManyRelationshipMetadata`,
-          {
-            params: {
-              $select: oneToNColumns.join(","),
-              $filter: `SchemaName eq '${relationshipName}' and ReferencingEntity eq '${currentTable}'`,
-            },
-          }
-        )
-        .then((res) => res.data.value.at(0));
-}
-
-export function getEntityDefinition(entityName: string | undefined) {
+export function getEntityDefinition(ax: AxiosInstance, entityName: string | undefined) {
   return typeof entityName === "undefined"
     ? Promise.reject(new Error("Invalid entity name"))
-    : axios
-        .get<IEntityDefinition>(`/api/data/v${apiVersion}/EntityDefinitions(LogicalName='${entityName}')`, {
+    : ax
+        .get<IEntityDefinition>(`EntityDefinitions(LogicalName='${entityName}')`, {
           params: {
             $select: tableDefinitionColumns.join(","),
             $expand: "Attributes($select=LogicalName,AttributeOf;$filter=AttributeType ne Microsoft.Dynamics.CRM.AttributeTypeCode'EntityName')",
@@ -295,13 +232,14 @@ export function getEntityDefinition(entityName: string | undefined) {
 }
 
 export async function getViewDefinition(
+  ax: AxiosInstance,
   entityName: string | undefined,
   viewName: string | undefined,
   queryType?: number | undefined
 ) {
   if (typeof entityName === "undefined") return Promise.reject(new Error("Invalid arguments"));
 
-  const result = await axios.get<{ value: IViewDefinition[] }>(`/api/data/v${apiVersion}/savedqueries`, {
+  const result = await ax.get<{ value: IViewDefinition[] }>(`savedqueries`, {
     params: {
       $filter: `returnedtypecode eq '${entityName}' ${viewName ? `and name eq '${viewName}'` : ""} ${
         queryType ? `and querytype eq ${queryType}` : ""
@@ -317,26 +255,20 @@ export async function getViewDefinition(
 }
 
 
-export async function getDefaultView(entityName: string | undefined, viewName: string | undefined = undefined) {
+export async function getDefaultView(ax: AxiosInstance, entityName: string | undefined, viewName: string | undefined = undefined) {
   if (viewName) {
-    const viewByName = await getViewDefinition(entityName, viewName);
+    const viewByName = await getViewDefinition(ax, entityName, viewName);
     if (viewByName) return viewByName;
   }
 
-  const defaultView = await getViewDefinition(entityName, undefined, 64);
+  const defaultView = await getViewDefinition(ax, entityName, undefined, 64);
   return defaultView;
 }
 
-export const getQuickSearchView = (entityName: string | undefined) => getViewDefinition(entityName, undefined, 4)
+export const getQuickSearchView = (ax: AxiosInstance, entityName: string | undefined) => getViewDefinition(ax, entityName, undefined, 4)
 
-export function useDefaultView(entityName: string | undefined, viewName: string | undefined) {
-  return useQuery({
-    queryKey: ["defaultView", entityName, viewName],
-    queryFn: () => getDefaultView(entityName, viewName),
-    enabled: !!entityName,
-  });
-}
 export async function getMetadataGrid(
+  ax: AxiosInstance,
   currentTable: string | undefined,
   referencedTable: string | undefined,
   relationshipName: string | undefined,
@@ -347,10 +279,10 @@ export async function getMetadataGrid(
 
   
   const [relationship1, relationship2, associatedView, quickSearchView] = await Promise.all([
-    getOnetoManyRelationShipDefinition(currentTable, relationshipName),
-    getConnectionRelationShipDefinition(referencedTable),
-    getDefaultView(referencedTable),
-    getQuickSearchView(referencedTable)
+    getOnetoManyRelationShipDefinition(ax, currentTable, relationshipName),
+    getConnectionRelationShipDefinition(ax, referencedTable),
+    getDefaultView(ax, referencedTable),
+    getQuickSearchView(ax, referencedTable)
   ]);
   const intersectEntityName = "connection";
   const associatedEntityName: string | undefined = referencedTable;  
@@ -359,9 +291,9 @@ export async function getMetadataGrid(
 
   try {
     const [currentEntity, intersectEntity, associatedEntity] = await Promise.all([
-      getEntityDefinition(currentTable),
-      getEntityDefinition(intersectEntityName),
-      getEntityDefinition(associatedEntityName),
+      getEntityDefinition(ax, currentTable),
+      getEntityDefinition(ax, intersectEntityName),
+      getEntityDefinition(ax, associatedEntityName),
       // getDefaultView(associatedEntityName, associatedViewName),
     ]);
 
@@ -405,31 +337,8 @@ export async function getMetadataGrid(
   }
 }
 
-export function retrieveMultiple(
-  entitySetName: string | undefined,
-  columns: Array<string | undefined> | undefined,
-  filter?: string,
-  top?: number,
-  orderby?: string,
-  extra?: string
-) {
-  return typeof entitySetName === "undefined" ||
-    typeof columns === "undefined" ||
-    columns.some((c) => typeof c === "undefined")
-    ? Promise.reject(new Error("Invalid entity set name or columns"))
-    : axios
-        .get<{ value: ComponentFramework.WebApi.Entity[] }>(`/api/data/v${apiVersion}/${entitySetName}`, {
-          params: {
-            $select: columns.join(","),
-            $filter: filter,
-            $top: top,
-            $orderby: orderby,
-          },
-        })
-        .then((res) => res.data.value);
-}
-
 export function retrieveMultipleFetch(
+  ax: AxiosInstance,
   entitySetName: string | undefined,
   fetchXml: string | undefined,
   page?: number,
@@ -448,8 +357,8 @@ export function retrieveMultipleFetch(
 
   const newFetchXml = new XMLSerializer().serializeToString(doc);
 
-  return axios
-    .get<{ value: ComponentFramework.WebApi.Entity[] }>(`/api/data/v${apiVersion}/${entitySetName}`, {
+  return ax
+    .get<{ value: ComponentFramework.WebApi.Entity[] }>(`${entitySetName}`, {
       headers: {
         Prefer: "odata.include-annotations=OData.Community.Display.V1.FormattedValue",
       },
@@ -460,108 +369,39 @@ export function retrieveMultipleFetch(
     .then((res) => res.data.value);
 }
 
-export async function retrieveAssociatedRecords(
-  currentRecordId: string | undefined,
-  intersectEntity: string | undefined,
-  intersectEntitySet: string | undefined,
-  intersectPrimaryIdAttribute: string | undefined,
-  currentIntersectAttribute: string | undefined,
-  associatedIntersectAttribute: string | undefined,
-  associatedEntity: string | undefined,
-  associatedEntityPrimaryIdAttribute: string | undefined,
-  associatedEntityPrimaryNameAttribute: string | undefined,
-  associatedEntityIconVectorName: string | null | undefined,
-  clientUrl?: string,
-) {
-  if (
-    typeof currentRecordId === "undefined" ||
-    typeof intersectEntity === "undefined" ||
-    typeof intersectEntitySet === "undefined" ||
-    typeof intersectPrimaryIdAttribute === "undefined" ||
-    typeof currentIntersectAttribute === "undefined" ||
-    typeof associatedIntersectAttribute === "undefined" ||
-    typeof associatedEntity === "undefined" ||
-    typeof associatedEntityPrimaryIdAttribute === "undefined" ||
-    typeof associatedEntityPrimaryNameAttribute === "undefined" || 
-    typeof associatedEntityIconVectorName === "undefined"
-  ) {
-    return Promise.reject(new Error("Invalid arguments"));
-  }
-
-  const fetchXml = `<fetch>
-    <entity name="${intersectEntity}">
-      <attribute name="${intersectPrimaryIdAttribute}" />  
-      <filter>
-        <condition attribute="${currentIntersectAttribute}" operator="eq" value="${currentRecordId}" />
-      </filter>
-      <link-entity name="${associatedEntity}" from="${associatedEntityPrimaryIdAttribute}" to="${associatedIntersectAttribute}" alias="aLink">
-        <attribute name="${associatedEntityPrimaryIdAttribute}" />  
-        <attribute name="${associatedEntityPrimaryNameAttribute}" />
-      </link-entity>
-    </entity>
-  </fetch>`;
-
-  const results = await retrieveMultipleFetch(intersectEntitySet, fetchXml);
-  return results.map((r) => {
-    const id = r[`aLink.${associatedEntityPrimaryIdAttribute}`];
-    const name = r[`aLink.${associatedEntityPrimaryNameAttribute}`];
-    return {
-      entityReference: {
-        id: id,
-        name: name,
-        etn: associatedEntity,
-      },
-      entityIconUrl: !!associatedEntityIconVectorName ? `${clientUrl ?? ""}/webresources/${associatedEntityIconVectorName}` : null,
-      key: id,
-      name: name,
-      data: {
-        [intersectPrimaryIdAttribute]: r[intersectPrimaryIdAttribute],
-        [associatedEntityPrimaryIdAttribute]: id,
-        [associatedEntityPrimaryNameAttribute]: name,
-      } as ComponentFramework.WebApi.Entity
-    } as ILookupItem
-  });
-}
-
 export function associateRecord(
+  ax: AxiosInstance,
   entitySetName: string | undefined,
   currentRecordId: string | undefined,
   associatedEntitySet: string | undefined,
   associateRecordId: string | undefined,
-  relationshipName: string | undefined,
-  clientUrl: string | undefined
+  relationshipName: string | undefined
 ) {
   if (
     typeof entitySetName === "undefined" ||
     typeof currentRecordId === "undefined" ||
     typeof associatedEntitySet === "undefined" ||
     typeof associateRecordId === "undefined" ||
-    typeof relationshipName === "undefined" ||
-    typeof clientUrl === "undefined"
+    typeof relationshipName === "undefined"
   ) {
     return Promise.reject(new Error("Invalid arguments"));
   }
 
-  return axios.post(
-    `/api/data/v${apiVersion}/${entitySetName}(${currentRecordId})/${relationshipName}/$ref`,
+  return ax.post(
+    `${entitySetName}(${currentRecordId})/${relationshipName}/$ref`,
     {
-      "@odata.id": `${clientUrl}/api/data/v${apiVersion}/${associatedEntitySet}(${associateRecordId
-        .replace("{", "")
-        .replace("}", "")})`,
+      "@odata.id": `${ax.defaults.baseURL}${associatedEntitySet}(${associateRecordId.replace("{", "").replace("}", "")})`,
     },
     {
       headers: {
-        "OData-MaxVersion": "4.0",
-        "OData-Version": "4.0",
         "If-None-Match": null,
-        Accept: "application/json",
-        "Content-Type": "application/json",
       },
     }
   );
 }
 
 export function disassociateRecord(
+  ax: AxiosInstance,
   entitySetName: string | undefined,
   currentRecordId: string | undefined,
   relationshipName: string | undefined,
@@ -576,44 +416,28 @@ export function disassociateRecord(
     return Promise.reject(new Error("Invalid arguments"));
   }
 
-  return axios.delete(
-    `/api/data/v${apiVersion}/${entitySetName}(${currentRecordId})/${relationshipName}(${associatedRecordId})/$ref`,
+  return ax.delete(
+    `${entitySetName}(${currentRecordId})/${relationshipName}(${associatedRecordId})/$ref`,
     {
       headers: {
-        "OData-MaxVersion": "4.0",
-        "OData-Version": "4.0",
         "If-Match": null,
-        Accept: "application/json",
-        "Content-Type": "application/json",
       },
     }
   );
 }
 
-export function createRecord(entitySetName: string | undefined, record: ComponentFramework.WebApi.Entity) {
+export function createRecord(ax: AxiosInstance, entitySetName: string | undefined, record: ComponentFramework.WebApi.Entity) {
   if (typeof entitySetName === "undefined") return Promise.reject(new Error("Invalid entity set name"));
-
-  return axios.post(`/api/data/v${apiVersion}/${entitySetName}`, record, {
-    headers: {
-      "OData-MaxVersion": "4.0",
-      "OData-Version": "4.0",
-      Accept: "application/json",
-      "Content-Type": "application/json",
-    },
-  });
+  return ax.post(`${entitySetName}`, record);
 }
 
-export function deleteRecord(entitySetName: string | undefined, recordId: string | undefined) {
+export function deleteRecord(ax: AxiosInstance, entitySetName: string | undefined, recordId: string | undefined) {  
   if (typeof entitySetName === "undefined" || typeof recordId === "undefined")
     return Promise.reject(new Error("Invalid arguments"));
-
-  return axios.delete(`/api/data/v${apiVersion}/${entitySetName}(${recordId})`, {
+    
+  return ax.delete(`${entitySetName}(${recordId})`, {
     headers: {
-      "OData-MaxVersion": "4.0",
-      "OData-Version": "4.0",
       "If-Match": null,
-      Accept: "application/json",
-      "Content-Type": "application/json",
     },
   });
 }

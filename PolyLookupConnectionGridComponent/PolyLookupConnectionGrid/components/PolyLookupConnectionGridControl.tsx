@@ -7,6 +7,7 @@ import React, { useCallback } from "react";
 import {
   createRecord,
   deleteRecord,
+  getAxiosInstance,
   useMetadataGrid,
   useSelectedItemsGrid,
 } from "../services/DataverseService";
@@ -116,7 +117,7 @@ const Body = ({
 
   // associate query
   const associateQuery = useMutation({
-    mutationFn: (item: ILookupItem) => createRecord(item.metadata.intersectEntity.EntitySetName, {
+    mutationFn: (item: ILookupItem) => createRecord(getAxiosInstance(clientUrl), item.metadata.intersectEntity.EntitySetName, {
       [`${item.metadata.currentEntityNavigationPropertyName}@odata.bind`]: `/${item.metadata.currentEntity.EntitySetName}(${currentRecordId})`,
       [`${item.metadata.associatedEntityNavigationPropertyName}@odata.bind`]: `/${item.metadata.associatedEntity.EntitySetName}(${item.entityReference.id})`,
       [`record1roleid@odata.bind`]: `/connectionroles(${entityConfig[item.metadata.associatedEntity.LogicalName].record1roleid})`,
@@ -132,7 +133,7 @@ const Body = ({
 
   // disassociate query
   const disassociateQuery = useMutation({
-    mutationFn: (item: ILookupItem) => deleteRecord(item.metadata?.intersectEntity.EntitySetName, item.connectionReference?.id),
+    mutationFn: (item: ILookupItem) => deleteRecord(getAxiosInstance(clientUrl), item.metadata?.intersectEntity.EntitySetName, item.connectionReference?.id),
     onSuccess: () => {
       dataset.refresh();
     },
