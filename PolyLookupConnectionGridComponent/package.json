@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "Project containing your PowerApps Component Framework (PCF) control.",
   "scripts": {
+    "postinstall": "symlink-dir ../../../node_modules/pcf-scripts node_modules/pcf-scripts && symlink-dir ../../../node_modules/pcf-start node_modules/pcf-start",
     "build": "pcf-scripts build",
     "clean": "pcf-scripts clean",
     "lint": "pcf-scripts lint",
