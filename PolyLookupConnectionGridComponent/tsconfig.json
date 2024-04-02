@@ -2,7 +2,7 @@
   "extends": "./node_modules/pcf-scripts/tsconfig_base.json",
   "compilerOptions": {
     "baseUrl": ".",
-    "typeRoots": ["./node_modules/@types"],
+    "typeRoots": ["../../../node_modules/@types"],
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
     "module": "ES2020",
@@ -11,6 +11,6 @@
     "target": "ES2021",
   },
   "exclude": [
-    "../../xrmtypings/**/*",
+    "../../../xrmtypings/**/*",
   ]
 }
