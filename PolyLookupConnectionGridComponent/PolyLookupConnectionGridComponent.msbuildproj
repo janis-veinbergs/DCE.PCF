@@ -28,4 +28,6 @@
   <ItemGroup>
     <None Include="$(MSBuildThisFileDirectory)\**" Exclude="@(ExcludeDirectories)" />
   </ItemGroup>
+
+	<Target Name="GetProjectOutputPath" />
 </Project>
