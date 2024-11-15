@@ -75,7 +75,7 @@ const Body = ({
   if (!dataset.columns.some(x => x.name === "record2id")) {
     throw new Error(`record2id column is mandatory for grid view ${dataset.getViewId()}`);
   };
-  const [selectedItemsCreate, setSelectedItemsCreate] = React.useState<ComponentFramework.WebApi.Entity[]>([]);
+  const [selectedItemsCreate] = React.useState<ComponentFramework.WebApi.Entity[]>([]);
   const shouldDisable = () => formType !== XrmEnum.FormType.Update;
   const entityConfig = React.useMemo(() => {
     const guidPairs = lookupEntitiesRoles?.split(";");
@@ -175,13 +175,9 @@ const Body = ({
   }), [disabled]);
 
 
-    const isDataLoading = (isLoadingMetadata || isLoadingSelectedItems || dataset.loading) && !shouldDisable();
-  const isEmpty = (((selectedItems?.length == 0 && selectedItemsCreate?.length == 0) ?? true) || disabled) ?? true;
+  const isDataLoading = (isLoadingMetadata || isLoadingSelectedItems || dataset.loading) && !shouldDisable();
+  const isEmpty = React.useMemo(() => (((selectedItems?.length === 0 && selectedItemsCreate?.length === 0) ?? true) || disabled) ?? true, [selectedItems, selectedItemsCreate, disabled]);
   const metadataObject = React.useMemo(() => Object.values(metadata).every(m => m.isSuccess) ? Object.entries(metadata).reduce((acc, [key, value]) => value.isSuccess ? ({ ...acc, [key]: value.data }) : acc, {}) : undefined, [metadata]);
-  const lookupEntitiesRolesArray = React.useMemo(() => lookupEntitiesRoles?.split(";").map((guidPair, idx) => {
-    const [record1roleid, record2roleid] = guidPair.split(",");
-    return { entity: entityConfig[idx], record1roleid, record2roleid }; 
-  }), [entityConfig, lookupEntitiesRoles]);
   return (
     <Lookup 
       metadata={metadataObject}
